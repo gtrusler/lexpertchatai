@@ -1,0 +1,147 @@
+# Lexpert Case AI - Project Intelligence
+
+## Project Structure
+
+- The project follows a specific directory structure:
+
+  - `/src/frontend`: Contains all React frontend code
+    - `/src/frontend/src/components`: Reusable UI components
+    - `/src/frontend/src/pages`: Main page components
+    - `/src/frontend/src/context`: React Context providers
+  - `/backend`: Contains FastAPI backend code
+  - `/memory-bank`: Project documentation
+
+- When running the application:
+  - Frontend: `cd src/frontend && npm run dev` (runs on http://localhost:5173)
+  - Backend: `cd backend && uvicorn main:app --reload` (runs on http://localhost:8000)
+  - Always activate the conda environment first: `conda activate lexpert_case_ai`
+
+## Terminology Preferences
+
+- Use "Assistant" instead of "Bot" in all user-facing text
+- Use "Case" to refer to a legal matter being handled
+- Use "Document" for any uploaded file
+- Use "Chat" for the conversation interface
+- Use "Dashboard" for the main landing page
+- Use "Wizard" for the assistant creation process
+
+## UI/UX Patterns
+
+- Color scheme:
+
+  - Primary blue: #0078D4
+  - Background: #F5F6F7 (light mode), dark gray (dark mode)
+  - Cards: White (light mode), dark gray (dark mode)
+  - Text: Dark gray (light mode), white (dark mode)
+
+- Component usage:
+
+  - Use `Card` component for clickable items with `onClick` handler
+  - Use `Button` component for primary actions
+  - Use `Tooltip` for explanatory text
+  - Use `LoadingSpinner` for loading states
+
+- Navigation:
+  - Include "Return to Dashboard" button in detail views
+  - Use keyboard shortcuts where possible (e.g., Alt+B for back)
+  - Ensure all interactive elements have proper accessibility attributes
+  - Use the Wizard page for creating new assistants
+
+## Known Challenges
+
+- Clickable elements sometimes require server restart to function properly
+
+  - Workaround: Restart both frontend and backend servers
+  - Root cause: Likely related to event handling in React components
+  - Fix: Updated Card component with improved event handling
+
+- Dark mode toggle requires proper implementation:
+
+  - Ensure ThemeContext is properly consumed
+  - Verify that `dark` class is applied to HTML root element
+  - Check that Tailwind is configured with `darkMode: 'class'`
+
+- Mock data limitations:
+  - Backend currently uses hardcoded data in `main.py`
+  - Frontend expects specific response formats
+  - Future implementation will replace with real database
+
+## Development Workflow
+
+- Always run both frontend and backend servers during development
+- Check browser console for errors when testing UI changes
+- Use the Memory Bank to track progress and document decisions
+- Update terminology consistently across all components
+- Use the Card component for clickable elements to ensure proper event handling
+
+## Testing Approach
+
+- Test navigation flows manually after UI changes
+- Verify dark/light mode toggle works across all components
+- Check responsive design on different screen sizes
+- Test with realistic legal queries to verify response formatting
+- Verify that the Wizard flow works correctly for creating new assistants
+
+## Future Considerations
+
+- The project will eventually transition from mock data to real RAG implementation
+- File upload functionality will be expanded with auto-tagging
+- User authentication will be fully implemented with Supabase
+- Performance optimizations will be needed for handling large document sets
+- The Wizard interface will be enhanced with more template options and customization
+
+# Lexpert Case AI Project Rules
+
+## Environment Variables
+
+- All frontend environment variables must be prefixed with VITE\_
+- Environment variables should be defined in both root .env and src/frontend/.env
+- Use getEnvVar utility function for accessing environment variables with logging
+- Mask sensitive values (keys, secrets) when logging
+
+## Error Handling
+
+- Always use try-catch blocks for Supabase operations
+- Implement component-level error states with user-friendly messages
+- Add detailed console logging with component prefix (e.g., [Documents])
+- Provide fallback UI for various error scenarios
+- Include retry mechanisms for recoverable errors
+
+## Authentication
+
+- Use Supabase Auth for user management
+- Implement role-based access control (admin vs. regular users)
+- Protected routes should be wrapped in AuthLayout component
+- Handle authentication errors gracefully with user feedback
+- Check authentication status before performing sensitive operations
+
+## Debugging
+
+- Use DEBUG flags to enable/disable detailed logging
+- Create standalone diagnostic tools for specific issues
+- Implement comprehensive error logging with context
+- Add visual feedback for loading and error states
+- Test API connectivity independently from UI components
+
+## Component Structure
+
+- Separate concerns: authentication, data fetching, UI rendering
+- Implement proper loading states for asynchronous operations
+- Handle edge cases (empty data, errors, loading)
+- Use consistent styling with Tailwind CSS utility classes
+- Follow the blue (#0078D4) color scheme for primary actions
+
+## Document Management
+
+- Store document metadata in lexpert.documents table
+- Store document files in 'documents' bucket in Supabase Storage
+- Generate unique file paths with timestamps to prevent collisions
+- Implement proper error handling for upload/delete operations
+- Provide visual feedback for upload success/failure
+
+## Known Issues
+
+- Documents page may render as a blank screen
+- Environment variables might not be properly loaded in some contexts
+- Authentication flow may cause redirect loops in certain scenarios
+- Supabase client initialization might fail silently

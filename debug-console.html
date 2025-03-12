@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Enhanced Debug Console</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #error-log { margin-top: 20px; border: 1px solid #ddd; padding: 10px; background-color: #f9f9f9; }
+        .error { color: red; }
+        .info { color: blue; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+    <script>
+        // Function to fetch the documents page and log any errors
+        async function fetchDocumentsPage() {
+            try {
+                document.getElementById('status').textContent = 'Fetching...';
+                
+                const response = await fetch('http://localhost:5173/documents');
+                const html = await response.text();
+                
+                console.log('Response status:', response.status);
+                console.log('HTML content length:', html.length);
+                
+                document.getElementById('status').textContent = `Fetched: Status ${response.status}, Content Length: ${html.length}`;
+                
+                // Log the HTML content
+                const logEntry = document.createElement('div');
+                logEntry.className = 'info';
+                logEntry.innerHTML = `<strong>HTML Content (first 500 chars):</strong><br><pre>${escapeHtml(html.substring(0, 500))}...</pre>`;
+                document.getElementById('error-log').appendChild(logEntry);
+                
+                // Check for specific issues in the HTML
+                checkForCommonIssues(html);
+            } catch (error) {
+                console.error('Error fetching documents page:', error);
+                
+                const logEntry = document.createElement('div');
+                logEntry.className = 'error';
+                logEntry.innerHTML = `<strong>Error:</strong> ${error.message}`;
+                document.getElementById('error-log').appendChild(logEntry);
+                
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        // Function to check for common issues in the HTML
+        function checkForCommonIssues(html) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'info';
+            logEntry.innerHTML = '<strong>Analysis:</strong><br>';
+            
+            // Check if the page has a root div for React
+            if (!html.includes('<div id="root">')) {
+                logEntry.innerHTML += '- Missing root div for React app<br>';
+            }
+            
+            // Check for JavaScript errors in the HTML
+            if (html.includes('Error:') || html.includes('error:')) {
+                logEntry.innerHTML += '- Possible error message in HTML<br>';
+            }
+            
+            // Check if Supabase is properly initialized
+            if (!html.includes('supabase') && !html.includes('Supabase')) {
+                logEntry.innerHTML += '- No mention of Supabase in the HTML<br>';
+            }
+            
+            document.getElementById('error-log').appendChild(logEntry);
+        }
+        
+        // Helper function to escape HTML
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</head>
+<body>
+    <h1>Enhanced Debug Console</h1>
+    <p>This tool helps debug issues with the Documents page.</p>
+    
+    <button onclick="fetchDocumentsPage()">Fetch Documents Page</button>
+    <p id="status">Ready</p>
+    
+    <h2>Debug Log</h2>
+    <div id="error-log"></div>
+</body>
+</html> 

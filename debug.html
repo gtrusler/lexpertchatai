@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Console</title>
+    <script>
+        // Function to fetch the documents page and log any errors
+        async function fetchDocumentsPage() {
+            try {
+                const response = await fetch('http://localhost:5173/documents');
+                const html = await response.text();
+                console.log('Response status:', response.status);
+                console.log('HTML content length:', html.length);
+                document.getElementById('content').innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching documents page:', error);
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Debug Console</h1>
+    <button onclick="fetchDocumentsPage()">Fetch Documents Page</button>
+    <div id="content"></div>
+</body>
+</html> 
