@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { checkEnvironmentVariables } from '../../utils/envCheck';
 
 // Debug flag - set to true to enable console logging
 const DEBUG = true;
@@ -45,6 +46,17 @@ try {
   };
 }
 
+interface DatabaseDocument {
+  id: string;
+  content: string;
+  metadata: {
+    name?: string;
+    path?: string;
+    tag?: string;
+  };
+  created_at: string;
+}
+
 interface Document {
   id: string;
   name: string;
@@ -54,78 +66,144 @@ interface Document {
 }
 
 const DocumentList: React.FC = () => {
-  debugLog('Rendering DocumentList component');
+  console.log('[DocumentList] Component rendering');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log('[DocumentList] Component mounting');
+    
+    // Check environment variables
+    const envCheck = checkEnvironmentVariables();
+    console.log('[DocumentList] Environment check:', envCheck);
+    
+    if (!envCheck.success) {
+      setError(`Environment error: ${envCheck.message}`);
+      setLoading(false);
+      return;
+    }
+    
+    console.log('[DocumentList] Environment variables:', {
+      supabaseUrl: supabaseUrl?.substring(0, 5) + "...",
+      supabaseKey: supabaseKey ? "Present" : "Missing"
+    });
+    
     fetchDocuments();
+    
+    return () => {
+      console.log('[DocumentList] Component unmounting');
+    };
   }, []);
 
   const fetchDocuments = async () => {
-    debugLog('Fetching documents');
+    console.log('[DocumentList] Fetching documents');
     try {
       // Check if Supabase is properly initialized
       if (!supabaseUrl || !supabaseKey) {
         const errorMsg = 'Supabase configuration is missing. Please check environment variables.';
-        console.error(errorMsg);
+        console.error('[DocumentList] ' + errorMsg);
         setError(errorMsg);
         setLoading(false);
         return;
       }
 
+      console.log('[DocumentList] Making Supabase query');
       const { data, error } = await supabase
-        .from('lexpert.documents')
+        .from('documents')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching documents:', error);
+        console.error('[DocumentList] Error fetching documents:', error);
         throw error;
       }
       
-      debugLog(`Fetched ${data?.length || 0} documents`);
-      setDocuments(data || []);
+      // Transform the data to match the expected Document interface
+      const transformedData = data?.map((doc: DatabaseDocument) => ({
+        id: doc.id,
+        name: doc.metadata.name || 'Unnamed Document',
+        path: doc.metadata.path || '',
+        created_at: doc.created_at || new Date().toISOString(),
+        tag: doc.metadata.tag || 'untagged'
+      })) || [];
+      
+      console.log(`[DocumentList] Fetched ${transformedData.length} documents`);
+      setDocuments(transformedData);
     } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch documents';
-      console.error('Error fetching documents:', err);
+      console.error('[DocumentList] Error fetching documents:', err);
       setError(errorMessage);
     } finally {
       setLoading(false);
+      console.log('[DocumentList] Fetch completed, loading state set to false');
     }
   };
 
   const handleDelete = async (id: string, path: string) => {
-    debugLog(`Deleting document: ${id}, path: ${path}`);
+    console.log(`[DocumentList] Deleting document: ${id}, path: ${path}`);
     try {
+      // Use backend API to check if bucket exists
+      console.log('[DocumentList] Checking if storage bucket exists via backend API');
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const response = await fetch(`${apiUrl}/api/check-bucket-exists`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ bucketName: 'documents' })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status !== 'success' || !data.exists) {
+          console.error('[DocumentList] Documents bucket does not exist');
+          throw new Error('Documents storage is not properly configured');
+        }
+      } catch (err) {
+        console.error('[DocumentList] Error checking storage bucket:', err);
+        throw err;
+      }
+      
       // Delete from Storage
+      console.log('[DocumentList] Deleting from storage');
       const { error: storageError } = await supabase.storage
         .from('documents')
         .remove([path]);
       
       if (storageError) {
-        console.error('Error deleting document from storage:', storageError);
+        console.error('[DocumentList] Error deleting document from storage:', storageError);
         throw storageError;
       }
 
       // Delete from database
+      console.log('[DocumentList] Deleting from database');
       const { error: dbError } = await supabase
-        .from('lexpert.documents')
+        .from('documents')
         .delete()
         .eq('id', id);
       
       if (dbError) {
-        console.error('Error deleting document from database:', dbError);
+        console.error('[DocumentList] Error deleting document from database:', dbError);
         throw dbError;
       }
 
-      debugLog('Document deleted successfully');
+      console.log('[DocumentList] Document deleted successfully');
       // Update local state
       setDocuments(documents.filter(doc => doc.id !== id));
+      
+      // Show success message
+      setSuccess('Document deleted successfully');
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete document';
-      console.error('Error deleting document:', err);
+      console.error('[DocumentList] Error deleting document:', err);
       setError(errorMessage);
       
       // Clear error after 5 seconds
@@ -134,6 +212,7 @@ const DocumentList: React.FC = () => {
   };
 
   if (loading) {
+    console.log('[DocumentList] Rendering loading state');
     return (
       <div className="flex justify-center items-center py-8">
         <div className="text-center">
@@ -145,11 +224,13 @@ const DocumentList: React.FC = () => {
   }
 
   if (error) {
+    console.log('[DocumentList] Rendering error state:', error);
     return (
       <div className="text-red-600 dark:text-red-400 p-4 bg-red-100 dark:bg-red-900/20 rounded">
         <p className="mb-2">{error}</p>
         <button 
           onClick={() => {
+            console.log('[DocumentList] Retry button clicked');
             setError(null);
             setLoading(true);
             fetchDocuments();
@@ -162,8 +243,14 @@ const DocumentList: React.FC = () => {
     );
   }
 
+  console.log('[DocumentList] Rendering document list, count:', documents.length);
   return (
     <div className="space-y-4">
+      {success && (
+        <div className="text-green-600 dark:text-green-400 p-4 bg-green-100 dark:bg-green-900/20 rounded mb-4">
+          <p>{success}</p>
+        </div>
+      )}
       {documents.length === 0 ? (
         <p className="text-gray-500 dark:text-gray-400">No documents available.</p>
       ) : (
@@ -186,13 +273,49 @@ const DocumentList: React.FC = () => {
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => {
-                  const url = supabase.storage.from('documents').getPublicUrl(doc.path).data?.publicUrl;
-                  if (url) {
-                    window.open(url);
-                  } else {
-                    setError('Could not generate document URL');
+                  console.log('[DocumentList] View document button clicked for:', doc.id);
+                  
+                  // Check if the storage bucket exists using backend API
+                  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                  fetch(`${apiUrl}/api/check-bucket-exists`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ bucketName: 'documents' })
+                  })
+                  .then(response => {
+                    if (!response.ok) {
+                      throw new Error(`API error: ${response.status}`);
+                    }
+                    return response.json();
+                  })
+                  .then(data => {
+                    if (data.status !== 'success' || !data.exists) {
+                      console.error('[DocumentList] Documents bucket does not exist');
+                      throw new Error('Documents storage is not properly configured');
+                    }
+                    
+                    // If bucket exists, get the URL
+                    // Extract the file path from the full path (remove the /documents/ prefix if present)
+                    const filePath = doc.path.startsWith('/documents/') ? doc.path.substring('/documents/'.length) : doc.path;
+                    console.log('[DocumentList] Getting URL for file path:', filePath);
+                    
+                    const url = supabase.storage.from('documents').getPublicUrl(filePath).data?.publicUrl;
+                    if (url) {
+                      console.log('[DocumentList] Opening URL:', url);
+                      window.open(url);
+                    } else {
+                      console.error('[DocumentList] Could not generate document URL');
+                      setError('Could not generate document URL');
+                      setTimeout(() => setError(null), 3000);
+                    }
+                  })
+                  .catch(err => {
+                    console.error('[DocumentList] Error viewing document:', err);
+                    setError(err instanceof Error ? err.message : 'Error viewing document');
                     setTimeout(() => setError(null), 3000);
-                  }
+                  });
                 }}
                 className="text-[#0078D4] hover:text-[#0078D4]/80 p-2 rounded-full"
                 title="View document"
@@ -203,7 +326,10 @@ const DocumentList: React.FC = () => {
                 </svg>
               </button>
               <button
-                onClick={() => handleDelete(doc.id, doc.path)}
+                onClick={() => {
+                  console.log('[DocumentList] Delete document button clicked for:', doc.id);
+                  handleDelete(doc.id, doc.path);
+                }}
                 className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-2 rounded-full"
                 title="Delete document"
               >

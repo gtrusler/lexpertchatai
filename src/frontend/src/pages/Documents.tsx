@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../context/ThemeContext';
 import DocumentList from '../components/documents/DocumentList';
+import DocumentsErrorBoundary from '../components/documents/DocumentsErrorBoundary';
+import { checkEnvironmentVariables, testSupabaseConnection } from '../utils/envCheck';
+import { debugSupabaseInit } from '../utils/supabaseDebug';
+import { debugAuthFlow, checkAdminStatus } from '../utils/authDebug';
 
 // Debug flag - set to true to enable console logging
 const DEBUG = true;
@@ -56,9 +60,9 @@ const fetchDocumentsByTag = async (tag: string) => {
   debugLog(`Fetching documents with tag: ${tag}`);
   try {
     const { data, error } = await supabase
-      .from('lexpert.documents')
+      .from('documents')
       .select('*')
-      .eq('tag', tag);
+      .eq('metadata->tag', tag);
     
     if (error) {
       console.error('Error fetching documents by tag:', error);
@@ -73,82 +77,172 @@ const fetchDocumentsByTag = async (tag: string) => {
   }
 };
 
+
+
 const Documents: React.FC = () => {
   debugLog('Rendering Documents component');
   const [isAdmin, setIsAdmin] = useState(false);
   const [taggedDocuments, setTaggedDocuments] = useState<any[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
 
-  // Check authentication status
+  // Function to refresh all documents
+  const refreshDocuments = async () => {
+    debugLog('Refreshing all documents');
+    try {
+      // Fetch documents with tag 'pleading' (or any other tag you're using)
+      const docs = await fetchDocumentsByTag('pleading');
+      setTaggedDocuments(docs || []);
+      
+      debugLog(`Refreshed documents: found ${docs.length} pleading documents`);
+      return true;
+    } catch (err) {
+      console.error('Error refreshing documents:', err);
+      return false;
+    }
+  };
+
+  // Enhanced logging for component mounting
   useEffect(() => {
-    const checkAdminStatus = async () => {
-      debugLog('Checking admin status');
+    console.log("[Documents] Component mounting");
+    
+    // Check environment variables
+    const envCheck = checkEnvironmentVariables();
+    console.log("[Documents] Environment check:", envCheck);
+    
+    if (!envCheck.success) {
+      setAuthError(`Environment error: ${envCheck.message}`);
+      setLoading(false);
+      return;
+    }
+    
+    console.log("[Documents] Environment variables:", {
+      supabaseUrl: supabaseUrl?.substring(0, 5) + "...",
+      supabaseKey: supabaseKey ? "Present" : "Missing"
+    });
+    
+    const initializeComponent = async () => {
       try {
-        setLoading(true);
+        // Debug Supabase initialization
+        console.log("[Documents] Running Supabase initialization debug");
+        const debugResult = await debugSupabaseInit();
+        console.log("[Documents] Supabase debug result:", debugResult);
         
-        // Check if Supabase is properly initialized
-        if (!supabaseUrl || !supabaseKey) {
-          const errorMsg = 'Supabase configuration is missing. Please check environment variables.';
-          console.error(errorMsg);
-          setAuthError(errorMsg);
+        if (!debugResult.success) {
+          setAuthError(`Supabase initialization error: ${debugResult.message}`);
           setLoading(false);
           return;
         }
         
-        const { data, error } = await supabase.auth.getUser();
+        // Debug authentication flow
+        console.log("[Documents] Debugging authentication flow");
+        const authResult = await debugAuthFlow();
+        console.log("[Documents] Auth flow debug result:", authResult);
         
-        if (error) {
-          console.error('Error checking admin status:', error);
-          setAuthError('Authentication error: ' + error.message);
+        if (!authResult.success) {
+          setAuthError(`Authentication error: ${authResult.message}`);
           setLoading(false);
           return;
         }
         
-        debugLog('Auth response:', data);
-        
-        if (!data.user) {
-          debugLog('No user found, redirecting to login');
+        if (!authResult.isAuthenticated) {
+          console.log("[Documents] No user found, redirecting to login");
           navigate('/login');
           return;
         }
         
-        const isUserAdmin = data.user.user_metadata?.role === 'admin';
-        debugLog('User admin status:', isUserAdmin);
-        setIsAdmin(isUserAdmin);
+        // Check admin status
+        console.log("[Documents] Checking admin status");
+        const adminResult = await checkAdminStatus();
+        console.log("[Documents] Admin status check result:", adminResult);
+        
+        setIsAdmin(adminResult.success && adminResult.isAdmin === true);
+        
+        // Check if documents storage bucket exists
+        console.log("[Documents] Checking if documents storage bucket exists");
+        try {
+          // Use our backend API to check if the bucket exists (using service role key)
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const response = await fetch(`${apiUrl}/api/check-bucket-exists`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ bucketName: 'documents' })
+          });
+          
+          const result = await response.json();
+          
+          if (result.error) {
+            console.error("[Documents] Error checking bucket:", result.error);
+            setUploadError("Error checking storage buckets: " + result.error);
+          } else if (!result.exists) {
+            console.log("[Documents] Documents bucket does not exist, attempting to create it");
+            
+            try {
+              // Try to create the bucket using the backend API
+              const createResponse = await fetch(`${apiUrl}/api/create-bucket`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ bucketName: 'documents' })
+              });
+              
+              const createResult = await createResponse.json();
+              
+              if (createResult.error) {
+                console.error("[Documents] Error creating bucket:", createResult.error);
+                setUploadError("Warning: Documents storage bucket does not exist and could not be created automatically. Please contact an administrator to create it in the Supabase dashboard.");
+              } else {
+                console.log("[Documents] Bucket created successfully:", createResult);
+                setUploadSuccess("Documents storage bucket created successfully!");
+                setTimeout(() => setUploadSuccess(null), 3000);
+              }
+            } catch (err) {
+              console.error("[Documents] Error creating bucket:", err);
+              setUploadError("Warning: Documents storage bucket does not exist. Please contact an administrator to create it in the Supabase dashboard.");
+            }
+          } else {
+            console.log("[Documents] Documents bucket exists");
+            // Clear any existing error messages about the bucket
+            if (uploadError && uploadError.includes("bucket does not exist")) {
+              setUploadError(null);
+            }
+          }
+        } catch (err) {
+          console.error("[Documents] Error checking storage bucket:", err);
+          setUploadError("Error checking storage configuration. Please try again later.");
+        }
+        
+        // Fetch documents if user is admin
+        if (adminResult.success && adminResult.isAdmin) {
+          console.log("[Documents] Fetching tagged documents");
+          try {
+            const docs = await fetchDocumentsByTag('pleading');
+            console.log("[Documents] Fetched documents:", docs.length);
+            setTaggedDocuments(docs || []);
+          } catch (err) {
+            console.error("[Documents] Error fetching tagged documents:", err);
+          }
+        }
+        
         setLoading(false);
       } catch (error: any) {
-        console.error('Error checking admin status:', error);
-        setAuthError('Unexpected error during authentication: ' + (error.message || 'Unknown error'));
+        console.error("[Documents] Initialization error:", error);
+        setAuthError('Unexpected error during initialization: ' + (error.message || 'Unknown error'));
         setLoading(false);
       }
     };
     
-    checkAdminStatus();
+    initializeComponent();
   }, [navigate]);
-
-  // Fetch tagged documents when admin status changes
-  useEffect(() => {
-    const fetchTaggedDocs = async () => {
-      debugLog('Fetching tagged documents');
-      try {
-        const docs = await fetchDocumentsByTag('pleading');
-        setTaggedDocuments(docs || []);
-      } catch (err) {
-        console.error('Error fetching tagged documents:', err);
-      }
-    };
-    
-    if (isAdmin && !loading) {
-      debugLog('User is admin, fetching documents');
-      fetchTaggedDocs();
-    }
-  }, [isAdmin, loading]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -157,47 +251,90 @@ const Documents: React.FC = () => {
     debugLog('Uploading file:', file.name);
     setUploadError(null);
     setUploadSuccess(null);
+    setIsUploading(true);
 
     try {
-      const fileName = file.name;
-      const filePath = `/documents/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      // Convert file to base64 for sending to backend
+      const fileReader = new FileReader();
       
-      debugLog('Uploading to storage:', filePath);
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(filePath, file, { upsert: false });
-      
-      if (uploadError) {
-        console.error('Storage upload error:', uploadError);
-        throw uploadError;
-      }
-      
-      debugLog('File uploaded, inserting record');
-      const { error: insertError } = await supabase.from('lexpert.documents').insert({
-        name: fileName,
-        path: filePath,
-        created_at: new Date().toISOString(),
-        tag: 'untagged' // Default tag
-      });
-      
-      if (insertError) {
-        console.error('Database insert error:', insertError);
-        throw insertError;
-      }
+      fileReader.onload = async (e) => {
+        try {
+          const base64Content = e.target?.result?.toString().split(',')[1];
+          if (!base64Content) {
+            throw new Error('Failed to convert file to base64');
+          }
+          
+          debugLog('Sending file to backend API for upload');
+          
+          // Use our backend endpoint which has the service role key
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const response = await fetch(`${apiUrl}/api/upload-file`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileContent: base64Content,
+              contentType: file.type
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (!response.ok || result.status === 'error') {
+            throw new Error(result.message || 'Failed to upload file');
+          }
+          
+          // Use the path returned from the backend
+          const filePath = result.path;
+          
+          debugLog('File uploaded via backend, inserting record');
+          const { error: insertError } = await supabase.from('documents').insert({
+            content: file.name,
+            metadata: {
+              name: file.name,
+              path: filePath,
+              created_at: new Date().toISOString(),
+              tag: 'untagged' // Default tag
+            }
+          });
+          
+          if (insertError) {
+            console.error('Database insert error:', insertError);
+            if (insertError.message?.includes('permission') || insertError.code === 'PGRST301') {
+              throw new Error('Permission denied: You do not have permission to insert records. This may be due to missing RLS policies for the documents table.');
+            } else {
+              throw insertError;
+            }
+          }
 
-      debugLog('Upload complete');
-      setUploadSuccess('Document uploaded successfully!');
-      setTimeout(() => setUploadSuccess(null), 3000);
-      if (fileInputRef.current) fileInputRef.current.value = ''; // Reset file input
+          debugLog('Upload complete');
+          setUploadSuccess('Document uploaded successfully!');
+          setTimeout(() => setUploadSuccess(null), 3000);
+          if (fileInputRef.current) fileInputRef.current.value = ''; // Reset file input
+          
+          // Refresh the document list with all documents
+          await refreshDocuments();
+          debugLog('Documents refreshed after upload');
+        } catch (err: any) {
+          const errorMessage = `Failed to upload document: ${err instanceof Error ? err.message : 'Unknown error'}`;
+          console.error(errorMessage, err);
+          setUploadError(errorMessage);
+          setTimeout(() => setUploadError(null), 5000);
+        } finally {
+          setIsUploading(false);
+        }
+      };
       
-      // Refresh the document list
-      const docs = await fetchDocumentsByTag('pleading');
-      setTaggedDocuments(docs || []);
+      // Start reading the file as data URL
+      fileReader.readAsDataURL(file);
     } catch (err: any) {
-      const errorMessage = `Failed to upload document: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      const errorMessage = `Failed to prepare file: ${err instanceof Error ? err.message : 'Unknown error'}`;
       console.error(errorMessage, err);
       setUploadError(errorMessage);
       setTimeout(() => setUploadError(null), 5000);
+      setIsUploading(false);
     }
   };
 
@@ -257,7 +394,7 @@ const Documents: React.FC = () => {
           <h2 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-4">Access Denied</h2>
           <p className="text-gray-700 dark:text-gray-300 mb-4">You need admin privileges to access this page.</p>
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/')}
             className="bg-[#0078D4] text-white px-4 py-2 rounded-md hover:bg-[#0078D4]/90 w-full"
           >
             Back to Dashboard
@@ -275,7 +412,7 @@ const Documents: React.FC = () => {
         <div className="flex justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Documents</h1>
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/')}
             className="bg-[#0078D4] text-white px-4 py-2 rounded-md hover:bg-[#0078D4]/90 flex items-center"
             aria-label="Return to dashboard (Alt+B)"
             accessKey="b"
@@ -303,19 +440,48 @@ const Documents: React.FC = () => {
               onClick={triggerFileInput}
               className="px-4 py-2 bg-[#0078D4] text-white rounded-md hover:bg-[#0078D4]/90 flex items-center justify-center"
               aria-label="Upload a document (click to select file)"
+              disabled={isUploading}
             >
-              <svg
-                className="h-5 w-5 mr-2"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Upload Document
+              {isUploading ? (
+                <>
+                  <svg 
+                    className="animate-spin h-5 w-5 mr-2" 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    fill="none" 
+                    viewBox="0 0 24 24"
+                  >
+                    <circle 
+                      className="opacity-25" 
+                      cx="12" 
+                      cy="12" 
+                      r="10" 
+                      stroke="currentColor" 
+                      strokeWidth="4"
+                    ></circle>
+                    <path 
+                      className="opacity-75" 
+                      fill="currentColor" 
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="h-5 w-5 mr-2"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Upload Document
+                </>
+              )}
             </button>
             <input
               type="file"
@@ -355,4 +521,13 @@ const Documents: React.FC = () => {
   );
 };
 
-export default Documents; 
+// Wrap the Documents component with the error boundary
+const DocumentsWithErrorBoundary: React.FC = () => {
+  return (
+    <DocumentsErrorBoundary>
+      <Documents />
+    </DocumentsErrorBoundary>
+  );
+};
+
+export default DocumentsWithErrorBoundary; 

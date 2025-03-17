@@ -7,8 +7,9 @@ import EditTemplate from './pages/EditTemplate';
 import Wizard from './pages/Wizard';
 import NotFound from './pages/NotFound';
 import Login from './pages/Login';
-import Documents from './pages/Documents';
+import DocumentsWithErrorBoundary from './pages/Documents';
 import EnvTest from './pages/EnvTest';
+import ErrorTest from './pages/ErrorTest';
 import AuthLayout from './components/layouts/AuthLayout';
 import { ThemeProvider } from './context/ThemeContext';
 
@@ -29,11 +30,12 @@ const App: React.FC = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/env-test" element={<EnvTest />} />
+        <Route path="/error-test" element={<ErrorTest />} />
         <Route element={<AuthLayout />}>
           <Route path="/chat/:botId" element={<Chat />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/templates/edit/:id" element={<EditTemplate />} />
-          <Route path="/documents" element={<Documents />} />
+          <Route path="/documents" element={<DocumentsWithErrorBoundary />} />
           <Route path="/wizard" element={<Wizard />} />
           <Route path="/wizard/:templateId" element={<Wizard />} />
           <Route path="*" element={<NotFound />} />
