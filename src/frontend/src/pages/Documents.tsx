@@ -4,9 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../context/ThemeContext';
 import DocumentList from '../components/documents/DocumentList';
 import DocumentsErrorBoundary from '../components/documents/DocumentsErrorBoundary';
-import { checkEnvironmentVariables, testSupabaseConnection } from '../utils/envCheck';
+import { checkEnvironmentVariables } from '../utils/envCheck';
 import { debugSupabaseInit } from '../utils/supabaseDebug';
 import { debugAuthFlow, checkAdminStatus } from '../utils/authDebug';
+import { storage } from '../services/supabase';
 
 // Debug flag - set to true to enable console logging
 const DEBUG = true;
@@ -79,7 +80,7 @@ const fetchDocumentsByTag = async (tag: string) => {
 
 
 
-const Documents: React.FC = () => {
+const Documents = () => {
   debugLog('Rendering Documents component');
   const [isAdmin, setIsAdmin] = useState(false);
   const [taggedDocuments, setTaggedDocuments] = useState<any[]>([]);
@@ -254,86 +255,63 @@ const Documents: React.FC = () => {
     setIsUploading(true);
 
     try {
-      // Convert file to base64 for sending to backend
-      const fileReader = new FileReader();
+      // Create a unique file path for the upload
+      const timestamp = new Date().getTime();
+      const filePath = `documents/${timestamp}_${file.name}`;
       
-      fileReader.onload = async (e) => {
-        try {
-          const base64Content = e.target?.result?.toString().split(',')[1];
-          if (!base64Content) {
-            throw new Error('Failed to convert file to base64');
-          }
-          
-          debugLog('Sending file to backend API for upload');
-          
-          // Use our backend endpoint which has the service role key
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-          const response = await fetch(`${apiUrl}/api/upload-file`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              fileName: file.name,
-              fileContent: base64Content,
-              contentType: file.type
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (!response.ok || result.status === 'error') {
-            throw new Error(result.message || 'Failed to upload file');
-          }
-          
-          // Use the path returned from the backend
-          const filePath = result.path;
-          
-          debugLog('File uploaded via backend, inserting record');
-          const { error: insertError } = await supabase.from('documents').insert({
-            content: file.name,
-            metadata: {
-              name: file.name,
-              path: filePath,
-              created_at: new Date().toISOString(),
-              tag: 'untagged' // Default tag
-            }
-          });
-          
-          if (insertError) {
-            console.error('Database insert error:', insertError);
-            if (insertError.message?.includes('permission') || insertError.code === 'PGRST301') {
-              throw new Error('Permission denied: You do not have permission to insert records. This may be due to missing RLS policies for the documents table.');
-            } else {
-              throw insertError;
-            }
-          }
-
-          debugLog('Upload complete');
-          setUploadSuccess('Document uploaded successfully!');
-          setTimeout(() => setUploadSuccess(null), 3000);
-          if (fileInputRef.current) fileInputRef.current.value = ''; // Reset file input
-          
-          // Refresh the document list with all documents
-          await refreshDocuments();
-          debugLog('Documents refreshed after upload');
-        } catch (err: any) {
-          const errorMessage = `Failed to upload document: ${err instanceof Error ? err.message : 'Unknown error'}`;
-          console.error(errorMessage, err);
-          setUploadError(errorMessage);
-          setTimeout(() => setUploadError(null), 5000);
-        } finally {
-          setIsUploading(false);
+      debugLog(`Uploading to path: ${filePath}`);
+      
+      // Upload the file directly to Supabase storage using the enhanced storage service
+      // The storage service now handles bucket creation and validation
+      const { data, error } = await storage.uploadFile('documents', filePath, file);
+      
+      if (error) {
+        console.error('[Documents] Upload error:', error);
+        throw new Error(`File upload failed: ${error.message}`);
+      }
+      
+      debugLog('Upload successful:', data);
+      
+      // Get the public URL of the uploaded file
+      const { data: urlData } = storage.getFileUrl('documents', filePath);
+      const publicUrl = urlData?.publicUrl || '';
+      debugLog('File URL:', publicUrl);
+      
+      // Insert record into the database
+      debugLog('Inserting record into database');
+      const { error: insertError } = await supabase.from('documents').insert({
+        content: file.name,
+        metadata: {
+          name: file.name,
+          path: filePath,
+          created_at: new Date().toISOString(),
+          tag: 'untagged' // Default tag
         }
-      };
+      });
+          
+      if (insertError) {
+        console.error('Database insert error:', insertError);
+        if (insertError.message?.includes('permission') || insertError.code === 'PGRST301') {
+          throw new Error('Permission denied: You do not have permission to insert records. This may be due to missing RLS policies for the documents table.');
+        } else {
+          throw insertError;
+        }
+      }
+
+      debugLog('Upload complete');
+      setUploadSuccess('Document uploaded successfully!');
+      setTimeout(() => setUploadSuccess(null), 3000);
+      if (fileInputRef.current) fileInputRef.current.value = ''; // Reset file input
       
-      // Start reading the file as data URL
-      fileReader.readAsDataURL(file);
+      // Refresh the document list with all documents
+      await refreshDocuments();
+      debugLog('Documents refreshed after upload');
     } catch (err: any) {
-      const errorMessage = `Failed to prepare file: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      const errorMessage = `Failed to upload document: ${err instanceof Error ? err.message : 'Unknown error'}`;
       console.error(errorMessage, err);
       setUploadError(errorMessage);
       setTimeout(() => setUploadError(null), 5000);
+    } finally {
       setIsUploading(false);
     }
   };

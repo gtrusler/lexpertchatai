@@ -115,20 +115,91 @@ export const chats = {
 // File storage functions
 export const storage = {
   uploadFile: async (bucket: string, path: string, file: File) => {
-    return await supabase.storage
-      .from(bucket)
-      .upload(path, file);
+    console.log(`[Storage] Uploading file to ${bucket}/${path}`);
+    try {
+      // Check if bucket exists first
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      
+      if (listError) {
+        console.error('[Storage] Error listing buckets:', listError);
+      } else {
+        const bucketExists = buckets ? buckets.some(b => b.name === bucket) : false;
+        if (!bucketExists) {
+          console.warn(`[Storage] Bucket '${bucket}' may not exist. Attempting to create...`);
+          try {
+            const { error } = await supabase.storage.createBucket(bucket, {
+              public: true,
+              fileSizeLimit: 10485760 // 10MB
+            });
+            
+            if (error) {
+              // Check if the error is because the bucket already exists
+              if (error.message && error.message.includes('already exists')) {
+                console.log(`[Storage] Bucket '${bucket}' already exists, proceeding with upload`);
+              } else {
+                // Only log the error, still try to upload
+                console.error('[Storage] Error creating bucket:', error);
+              }
+            } else {
+              console.log(`[Storage] Bucket '${bucket}' created successfully`);
+            }
+          } catch (err) {
+            console.error('[Storage] Error in bucket creation:', err);
+          }
+        }
+      }
+      
+      // Proceed with upload
+      const result = await supabase.storage
+        .from(bucket)
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: true // Overwrite if file exists
+        });
+      
+      if (result.error) {
+        console.error(`[Storage] Upload error for ${path}:`, result.error);
+      } else {
+        console.log(`[Storage] Successfully uploaded ${path}`);
+      }
+      
+      return result;
+    } catch (err) {
+      console.error('[Storage] Unexpected error during upload:', err);
+      throw err;
+    }
   },
   
   getFileUrl: (bucket: string, path: string) => {
-    return supabase.storage
+    console.log(`[Storage] Getting URL for ${bucket}/${path}`);
+    const result = supabase.storage
       .from(bucket)
       .getPublicUrl(path);
+    
+    if (!result.data?.publicUrl) {
+      console.warn(`[Storage] No public URL found for ${path}`);
+    }
+    
+    return result;
   },
   
   deleteFile: async (bucket: string, path: string) => {
-    return await supabase.storage
-      .from(bucket)
-      .remove([path]);
+    console.log(`[Storage] Deleting file ${bucket}/${path}`);
+    try {
+      const result = await supabase.storage
+        .from(bucket)
+        .remove([path]);
+      
+      if (result.error) {
+        console.error(`[Storage] Delete error for ${path}:`, result.error);
+      } else {
+        console.log(`[Storage] Successfully deleted ${path}`);
+      }
+      
+      return result;
+    } catch (err) {
+      console.error('[Storage] Unexpected error during delete:', err);
+      throw err;
+    }
   }
 }; 

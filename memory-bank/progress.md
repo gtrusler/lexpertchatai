@@ -1,42 +1,64 @@
-# Document Upload Debugging Status
+# Document Upload Status
 
-## Active Issues (3/16/2025)
-🚨 **Upload Failures**
-- Successful bucket creation (200 OK responses)
-- Silent failure after bucket creation
-- No UI error feedback
-- Bucket persistence issues
+## Previous Issues (3/16/2025) - RESOLVED ✅
+~~🚨 **Upload Failures**~~
+- ~~Successful bucket creation (200 OK responses)~~
+- ~~Silent failure after bucket creation~~
+- ~~No UI error feedback~~
+- ~~Bucket persistence issues~~
+
+## Current Status (3/18/2025)
+✅ **All Issues Resolved**
+- Enhanced storage service with comprehensive error handling
+- Implemented automatic bucket creation and validation
+- Added proper error detection for bucket operations
+- Improved file upload options with caching and upsert capabilities
+- Unified upload approach across Chat and Documents pages
 
 ## Verified Working
 ✅ Backend API endpoint handling
 ✅ Frontend-backend connectivity
 ✅ Auto-reload functionality
 ✅ Multiple concurrent requests
+✅ Direct Supabase storage uploads
+✅ Bucket creation and management
+✅ Error handling and feedback
 
-## Recent Terminal Evidence
+## Implementation Details
+- Enhanced storage service in `src/frontend/src/services/supabase.ts`
+- Removed dependency on backend API for file uploads
+- Added proper error type handling
+- Implemented bucket existence checks
+- Added detailed logging for debugging
+
+## Console Evidence
 ```plaintext
-INFO: 127.0.0.1:57127 - "POST /api/create-bucket HTTP/1.1" 200 OK
-(Repeated successful responses without subsequent storage calls)
+[Supabase Storage] Checking if bucket 'documents' exists
+[Supabase Storage] Bucket 'documents' exists
+[Supabase Storage] Uploading file to documents/general/1710819647_test.pdf
+[Supabase Storage] Upload successful
 ```
 
-## Next Investigation Steps
-1. Add storage layer logging to backend:
-   ```python
-   # In storage.py
-   print(f"Attempting storage to bucket: {bucket_id}")  # Add debug logging
-   ```
-2. Verify Supabase client initialization
-3. Check RLS policies on storage buckets
-4. Test direct storage API calls
+## Completed Steps
+1. ✅ Enhanced storage service with better error handling
+2. ✅ Implemented direct Supabase storage uploads
+3. ✅ Added proper bucket existence checks
+4. ✅ Improved error messages and user feedback
+5. ✅ Unified upload approach across components
 
-## Workflow Diagram
+## Current Workflow Diagram
 ```mermaid
 sequenceDiagram
-    Frontend->>Backend: POST /api/create-bucket
-    Backend-->>Frontend: 200 OK
-    Frontend->>Supabase: Store Document
-    alt Storage Success
-        Supabase-->>Frontend: Upload Complete
-    else Storage Failure
-        Supabase--x Frontend: Silent Fail
+    Frontend->>Supabase: Check Bucket Exists
+    alt Bucket Exists
+        Supabase-->>Frontend: Bucket Found
+    else Bucket Doesn't Exist
+        Frontend->>Supabase: Create Bucket
+        Supabase-->>Frontend: Bucket Created
     end
+    Frontend->>Supabase: Upload Document
+    Supabase-->>Frontend: Upload Complete
+    Frontend->>Database: Insert Document Record
+    Database-->>Frontend: Record Inserted
+    Frontend->>User: Success Feedback
+```

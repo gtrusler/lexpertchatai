@@ -1,17 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
 import { PaperClipIcon, ArrowUpIcon, SpeakerWaveIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import Message from '../components/chat/Message';
 import Tooltip from '../components/common/Tooltip';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import FileUpload from '../components/common/FileUpload';
 import { useTheme } from '../context/ThemeContext';
-
-// Create a Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { storage } from '../services/supabase';
 
 // Add these type declarations for speech recognition
 declare global {
@@ -32,9 +26,7 @@ interface SpeechRecognitionEvent extends Event {
   };
 }
 
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-}
+// Removed unused interface
 
 interface Message {
   id: string;
@@ -72,6 +64,8 @@ const Chat: React.FC = () => {
   const [isVoiceInput, setIsVoiceInput] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -227,48 +221,85 @@ const Chat: React.FC = () => {
       const fileArray = Array.from(files);
       setUploadedFiles((prev) => [...prev, ...fileArray]);
       
-      // In a real implementation, you would upload the files to Supabase Storage
-      // and process them with auto-tagging using spaCy/Hugging Face
-      
-      // Simulate auto-tagging with confidence
-      fileArray.forEach(file => {
-        setTimeout(() => {
-          // Simulate NLP-based auto-tagging
-          const autoTags: AutoTagResult[] = [];
+      // Process each file and upload directly to Supabase
+      fileArray.forEach(async (file) => {
+        try {
+          console.log(`[Chat] Uploading file: ${file.name}`);
+          setLoading(true); // Use existing loading state
+          setError(null); // Clear any previous errors
           
-          if (file.name.toLowerCase().includes('affidavit')) {
-            autoTags.push({ tag: 'affidavit', confidence: 0.95 });
-          } else if (file.name.toLowerCase().includes('petition')) {
-            autoTags.push({ tag: 'petition', confidence: 0.92 });
-          } else if (file.name.toLowerCase().includes('report')) {
-            autoTags.push({ tag: 'report', confidence: 0.88 });
-          } else {
-            autoTags.push({ tag: 'document', confidence: 0.75 });
+          // Create a unique file path for the upload
+          const timestamp = new Date().getTime();
+          const filePath = `${botId || 'general'}/${timestamp}_${file.name}`;
+          
+          console.log(`[Chat] Uploading to path: ${filePath}`);
+          
+          // Upload the file directly to Supabase storage using the enhanced storage service
+          // The storage service now handles bucket creation and validation
+          const { data, error } = await storage.uploadFile('documents', filePath, file);
+          
+          if (error) {
+            console.error('[Chat] Upload error:', error);
+            throw new Error(`File upload failed: ${error.message}`);
           }
           
-          // Add character names as tags if they appear in the filename
-          if (bot?.characters) {
-            bot.characters.forEach(char => {
-              if (file.name.toLowerCase().includes(char.name.toLowerCase())) {
-                autoTags.push({ 
-                  tag: char.name.toLowerCase().replace(/\s+/g, '_'), 
-                  confidence: 0.90 
-                });
-              }
-            });
-          }
+          console.log('[Chat] Upload successful:', data);
           
-          // Show confirmation for low confidence tags
-          const lowConfidenceTags = autoTags.filter(tag => tag.confidence < 0.9);
-          if (lowConfidenceTags.length > 0) {
-            const tagNames = lowConfidenceTags.map(t => t.tag).join(', ');
-            const avgConfidence = Math.round(
-              lowConfidenceTags.reduce((sum, tag) => sum + tag.confidence, 0) / lowConfidenceTags.length * 100
-            );
+          // Get the public URL of the uploaded file
+          const { data: urlData } = storage.getFileUrl('documents', filePath);
+          console.log('[Chat] File URL:', urlData?.publicUrl);
+          
+          // Show success message
+          const successMessage = `File ${file.name} uploaded successfully`;
+          setSuccess(successMessage);
+          setTimeout(() => setSuccess(null), 3000);
+          
+          // Simulate auto-tagging with confidence
+          setTimeout(() => {
+            // Simulate NLP-based auto-tagging
+            const autoTags: AutoTagResult[] = [];
             
-            setTooltip(`File tagged as [${tagNames}] with ${avgConfidence}% confidence. Click to confirm or edit.`);
-          }
-        }, 1000);
+            if (file.name.toLowerCase().includes('affidavit')) {
+              autoTags.push({ tag: 'affidavit', confidence: 0.95 });
+            } else if (file.name.toLowerCase().includes('petition')) {
+              autoTags.push({ tag: 'petition', confidence: 0.92 });
+            } else if (file.name.toLowerCase().includes('report')) {
+              autoTags.push({ tag: 'report', confidence: 0.88 });
+            } else {
+              autoTags.push({ tag: 'document', confidence: 0.75 });
+            }
+            
+            // Add character names as tags if they appear in the filename
+            if (bot?.characters) {
+              bot.characters.forEach(char => {
+                if (file.name.toLowerCase().includes(char.name.toLowerCase())) {
+                  autoTags.push({ 
+                    tag: char.name.toLowerCase().replace(/\s+/g, '_'), 
+                    confidence: 0.90 
+                  });
+                }
+              });
+            }
+            
+            // Show confirmation for low confidence tags
+            const lowConfidenceTags = autoTags.filter(tag => tag.confidence < 0.9);
+            if (lowConfidenceTags.length > 0) {
+              const tagNames = lowConfidenceTags.map(t => t.tag).join(', ');
+              const avgConfidence = Math.round(
+                lowConfidenceTags.reduce((sum, tag) => sum + tag.confidence, 0) / lowConfidenceTags.length * 100
+              );
+              
+              setTooltip(`File tagged as [${tagNames}] with ${avgConfidence}% confidence. Click to confirm or edit.`);
+            }
+          }, 1000);
+          
+        } catch (err) {
+          console.error('[Chat] Error handling file upload:', err);
+          setError(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          setTimeout(() => setError(null), 5000);
+        } finally {
+          setLoading(false);
+        }
       });
     }
   };
@@ -317,13 +348,7 @@ const Chat: React.FC = () => {
     localStorage.setItem('voiceEnabled', newMode.toString());
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  // Removed unused formatTimestamp function as it's already implemented in the Message component
 
   const handleKeyboardShortcuts = (e: React.KeyboardEvent) => {
     // Ctrl+U for upload
@@ -582,6 +607,13 @@ const Chat: React.FC = () => {
               targetRef={inputRef}
               show={!!tooltip}
             />
+          )}
+          
+          {success && (
+            <div className="text-sm text-green-600 dark:text-green-400 mb-2">{success}</div>
+          )}
+          {error && (
+            <div className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</div>
           )}
           
           <div className="flex items-center space-x-2">
