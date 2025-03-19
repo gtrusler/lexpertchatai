@@ -17,6 +17,11 @@
 
 - **Framework**: FastAPI
 - **Language**: Python 3.10+
+- **Architecture**: Modular structure with dedicated modules for:
+  - API routes (`/app/api/routes/`)
+  - Services (`/app/services/`)
+  - Models (`/app/models/`)
+  - Core utilities (`/app/core/`)
 - **Environment Management**: Conda
 - **API Documentation**: Swagger UI (auto-generated)
 - **Database**: Supabase (PostgreSQL)
@@ -24,6 +29,7 @@
 - **Authentication**: Supabase Auth
 - **Vector Store**: pgvector for embeddings
 - **Access Control**: Row Level Security (RLS)
+- **Logging**: Structured logging with Python's logging module
 
 ### AI and NLP
 
