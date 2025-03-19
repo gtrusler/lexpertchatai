@@ -2,6 +2,8 @@ import json
 import os
 import random
 import time
+import base64
+import uuid
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -53,7 +55,7 @@ app = FastAPI(title="Lexpert Case AI API")
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,6 +99,7 @@ class FileUploadRequest(BaseModel):
     fileName: str
     fileContent: str  # Base64 encoded file content
     contentType: str
+    caseId: Optional[str] = None
 
 
 @app.post("/api/create-bucket")
@@ -122,11 +125,15 @@ async def create_bucket(request: BucketRequest = Body(...)):
         # Check if the bucket already exists
         try:
             print(f"[DEBUG] Checking if bucket '{bucket_name}' exists")
-            buckets = client.storage.list_buckets()
-            buckets_json = json.dumps(buckets, indent=2)
-            print(f"[DEBUG] Retrieved buckets: {buckets_json}")
+            buckets = supabase_client.storage.list_buckets()
             
-            bucket_exists = any(bucket['name'] == bucket_name for bucket in buckets)
+            # Check if buckets is a list or dictionary
+            if isinstance(buckets, list):
+                bucket_exists = any(bucket.get('name') == bucket_name for bucket in buckets)
+            else:
+                print(f"[DEBUG] Unexpected buckets response type: {type(buckets)}")
+                bucket_exists = False
+                
             if bucket_exists:
                 print(f"[DEBUG] Bucket '{bucket_name}' already exists")
                 return {
@@ -138,42 +145,34 @@ async def create_bucket(request: BucketRequest = Body(...)):
             print(f"[DEBUG] Error checking bucket existence: {e}")
             # Continue with bucket creation attempt even if check fails
         
-        # Try multiple approaches to create the bucket
+        # Simplified bucket creation approach
         print(f"[DEBUG] Creating bucket with name: '{bucket_name}'")
         
         try:
-            # Try with the 'name' parameter as per Supabase API docs
-            result = client.storage.create_bucket(
-                name=bucket_name,
-                options={"public": False}
-            )
-            print(f"[DEBUG] Bucket created successfully using 'name' parameter")
-        except Exception as e1:
-            print(f"[DEBUG] First bucket creation attempt failed: {e1}")
+            # Direct approach with proper parameters
+            storage = client.storage
+            result = storage.create_bucket(bucket_name)
+            print(f"[DEBUG] Bucket created successfully")
             
-            try:
-                # Try with 'id' parameter
-                result = client.storage.create_bucket(
-                    id=bucket_name,
-                    options={"public": False}
-                )
-                print(f"[DEBUG] Bucket created successfully using 'id' parameter")
-            except Exception as e2:
-                print(f"[DEBUG] Second bucket creation attempt failed: {e2}")
-                
-                try:
-                    # Try with positional parameters
-                    result = client.storage.create_bucket(bucket_name, {"public": False})
-                    print(f"[DEBUG] Bucket created successfully using positional parameters")
-                except Exception as e3:
-                    print(f"[ERROR] All bucket creation attempts failed: {e3}")
-                    raise Exception(f"Failed to create bucket: {e3}")
-        
-        return {
-            "status": "success",
-            "message": f"Bucket '{bucket_name}' created successfully",
-            "bucketId": bucket_name
-        }
+            return {
+                "status": "success",
+                "message": f"Bucket '{bucket_name}' created successfully",
+                "bucketId": bucket_name
+            }
+        except Exception as e:
+            print(f"[ERROR] Bucket creation failed: {e}")
+            
+            # Check if the error indicates the bucket already exists
+            error_str = str(e).lower()
+            if "already exists" in error_str or "duplicate" in error_str:
+                print(f"[INFO] Bucket '{bucket_name}' already exists (from error message)")
+                return {
+                    "status": "success",
+                    "message": f"Bucket '{bucket_name}' already exists",
+                    "bucketId": bucket_name
+                }
+            
+            raise Exception(f"Failed to create bucket: {e}")
     except Exception as e:
         print(f"[ERROR] Failed to create bucket: {e}")
         return {
@@ -188,7 +187,8 @@ async def check_bucket_exists(request: BucketRequest = Body(...)):
     """Check if a bucket exists in Supabase storage using the service role key"""
     try:
         # Get Supabase client with service role permissions
-        client = get_supabase_client()
+        supabase_client = get_supabase_client()
+        print(f"[DEBUG] Supabase client type: {type(supabase_client)}")
         
         # Try to get bucket info - if it doesn't exist, this will throw an exception
         try:
@@ -216,13 +216,26 @@ async def check_bucket_exists(request: BucketRequest = Body(...)):
 async def create_bucket(request: BucketRequest = Body(...)):
     """Create a bucket in Supabase storage using the service role key"""
     try:
+        # Debug the request object
+        print(f"[DEBUG] Bucket request: {request}")
+        print(f"[DEBUG] Bucket name: {request.bucketName}")
+        print(f"[DEBUG] Public flag: {request.public}")
+        
         # Get Supabase client with service role permissions
-        client = get_supabase_client()
+        supabase_client = get_supabase_client()
+        print(f"[DEBUG] Supabase client type: {type(supabase_client)}")
         
         # Check if bucket already exists
         try:
-            buckets = client.storage.list_buckets()
-            bucket_exists = any(bucket['name'] == request.bucketName for bucket in buckets)
+            buckets = supabase_client.storage.list_buckets()
+            print(f"[DEBUG] Buckets: {buckets}")
+            
+            # Check if buckets is a list and handle accordingly
+            if isinstance(buckets, list):
+                bucket_exists = any(bucket.get('name') == request.bucketName for bucket in buckets)
+            else:
+                print(f"[WARNING] Unexpected bucket list type: {type(buckets)}")
+                bucket_exists = False
             
             if bucket_exists:
                 print(f"[INFO] Bucket '{request.bucketName}' already exists")
@@ -234,10 +247,26 @@ async def create_bucket(request: BucketRequest = Body(...)):
             else:
                 # Bucket doesn't exist, create it
                 print(f"[INFO] Creating bucket '{request.bucketName}'")
-                result = client.storage.create_bucket(
-                    request.bucketName, 
-                    {'public': request.public}
-                )
+                
+                # Ensure bucket name is a string and create proper parameters
+                bucket_name = str(request.bucketName)
+                
+                # Debug the parameters being sent
+                print(f"[DEBUG] Creating bucket with name: '{bucket_name}'")
+                print(f"[DEBUG] Public flag: {bool(request.public)}")
+                
+                # Create the bucket with name parameter only first
+                try:
+                    result = supabase_client.storage.create_bucket(bucket_name)
+                    print(f"[DEBUG] Bucket created with name only: {result}")
+                    
+                    # Update bucket to be public if requested
+                    if request.public:
+                        update_result = supabase_client.storage.update_bucket(bucket_name, {'public': True})
+                        print(f"[DEBUG] Bucket updated to public: {update_result}")
+                except Exception as bucket_err:
+                    print(f"[ERROR] Bucket creation error details: {bucket_err}")
+                    raise bucket_err
                 
                 print(f"[INFO] Bucket creation result: {result}")
                 return {
@@ -250,7 +279,7 @@ async def create_bucket(request: BucketRequest = Body(...)):
             # Try to create the bucket anyway
             try:
                 print(f"[INFO] Attempting to create bucket '{request.bucketName}'")
-                result = client.storage.create_bucket(
+                result = supabase_client.storage.create_bucket(
                     request.bucketName, 
                     {'public': request.public}
                 )
@@ -276,73 +305,148 @@ async def create_bucket(request: BucketRequest = Body(...)):
 async def upload_file(request: FileUploadRequest = Body(...)):
     """Upload a file to Supabase storage using the service role key"""
     try:
+        print(f"[INFO] Starting file upload process for: {request.fileName}")
+        
         # Get Supabase client with service role permissions
-        client = get_supabase_client()
+        supabase_client = get_supabase_client()
+        print(f"[DEBUG] Supabase client type: {type(supabase_client)}")
         
-        # Check if the documents bucket exists, create it if not
-        try:
-            buckets = client.storage.list_buckets()
-            bucket_exists = any(bucket['name'] == 'documents' for bucket in buckets)
-            
-            if not bucket_exists:
-                print("[INFO] 'documents' bucket does not exist, creating it")
-                client.storage.create_bucket('documents', {'public': False})
-                print("[INFO] 'documents' bucket created successfully")
-        except Exception as bucket_err:
-            print(f"[ERROR] Error checking/creating bucket: {bucket_err}")
-            # Continue anyway, the upload might still work
-        
-        # Decode base64 file content
+        # Decode base64 file content first to fail early if there's an issue
         import base64
-        file_content = base64.b64decode(request.fileContent)
+        try:
+            file_content = base64.b64decode(request.fileContent)
+            print(f"[DEBUG] Decoded file content, size: {len(file_content)} bytes")
+        except Exception as decode_err:
+            print(f"[ERROR] Failed to decode base64 content: {decode_err}")
+            return {"success": False, "error": f"Failed to decode file content: {str(decode_err)}"}
         
         # Generate a unique file path with timestamp
         import time
+        import uuid
         timestamp = int(time.time())
-        file_path = f"{timestamp}-{request.fileName.replace(' ', '_')}"
+        unique_id = str(uuid.uuid4())[:8]  # Use part of a UUID for uniqueness
+        safe_filename = request.fileName.replace(' ', '_')
+        file_path = f"{timestamp}_{unique_id}_{safe_filename}"
         
-        print(f"[DEBUG] Uploading file to 'documents' bucket: {file_path}")
+        print(f"[INFO] Preparing to upload file: {file_path}")
         
-        # Upload file to the documents bucket
-        upload_result = client.storage.from_("documents").upload(
-            file_path,
-            file_content,
-            file_options={"contentType": request.contentType}
-        )
+        # Direct approach to ensure bucket exists
+        storage = supabase_client.storage
+        print(f"[DEBUG] Storage object type: {type(storage)}")
         
-        # Check for upload errors
-        if isinstance(upload_result, dict) and upload_result.get('error'):
-            print(f"[ERROR] File upload failed: {upload_result['error']}")
-            raise Exception(f"File upload failed: {upload_result['error']}")
+        # First, check if the bucket exists before trying to create it
+        try:
+            print("[INFO] Checking if 'documents' bucket exists")
+            buckets = storage.list_buckets()
             
-        # Get the public URL for the file
-        file_url = client.storage.from_("documents").get_public_url(file_path)
+            # Check if buckets is iterable and has the expected structure
+            if not isinstance(buckets, list):
+                print(f"[WARNING] Unexpected bucket list type: {type(buckets)}")
+                bucket_exists = False
+            else:
+                # Safely check for bucket existence
+                bucket_exists = False
+                for bucket in buckets:
+                    if isinstance(bucket, dict) and bucket.get('name') == 'documents':
+                        bucket_exists = True
+                        break
+                    elif hasattr(bucket, 'name') and bucket.name == 'documents':
+                        bucket_exists = True
+                        break
+            
+            if not bucket_exists:
+                print("[INFO] 'documents' bucket does not exist, creating it")
+                # Create the bucket with public access
+                supabase_client.storage.create_bucket('documents', {'public': True})
+                print("[INFO] Created 'documents' bucket successfully")
+            else:
+                print("[INFO] 'documents' bucket already exists")
+        except Exception as e:
+            print(f"[WARNING] Bucket check/creation error: {str(e)}")
+            # If the error message suggests the bucket already exists, continue
+            if "already exists" in str(e).lower():
+                print("[INFO] Bucket appears to already exist based on error message")
+            else:
+                print("[INFO] Will attempt to use the bucket anyway")
         
-        # Insert record into documents table
-        db_result = client.table('documents').insert({
-            'name': request.fileName,
-            'path': file_path,
-            'content_type': request.contentType,
-            'created_at': datetime.now().isoformat(),
-            'url': file_url
-        }).execute()
-        
-        if hasattr(db_result, 'error') and db_result.error:
-            print(f"[WARNING] File uploaded but database record creation failed: {db_result.error}")
-        
-        return {
-            "status": "success",
-            "message": "File uploaded successfully",
-            "path": file_path,
-            "url": file_url
-        }
+        # Now upload the file
+        try:
+            print("[DEBUG] Starting file upload")
+            # Get a reference to the bucket
+            bucket = supabase_client.storage.from_("documents")
+            
+            # Debug bucket object type
+            print(f"[DEBUG] Bucket object type: {type(bucket)}")
+            print(f"[DEBUG] Bucket object dir: {dir(bucket)}")
+            
+            # Upload the file
+            print(f"[DEBUG] Uploading file with path: {file_path}, content length: {len(file_content)}")
+            upload_result = bucket.upload(
+                path=file_path,
+                file=file_content,
+                file_options={"contentType": request.contentType}
+            )
+            print(f"[DEBUG] Upload method completed without exception")
+            
+            print(f"[DEBUG] Upload complete, result: {upload_result}")
+            
+            # Try to get the public URL
+            try:
+                file_url = bucket.get_public_url(file_path)
+                print(f"[INFO] Generated public URL: {file_url}")
+            except Exception as url_err:
+                print(f"[WARNING] Could not generate public URL: {url_err}")
+                file_url = f"/documents/{file_path}"  # Fallback URL format
+            
+            # Insert a record in the database
+            try:
+                print("[INFO] Inserting document record in database")
+                document_data = {
+                    "name": request.fileName,
+                    "path": file_path,
+                    "content_type": request.contentType,
+                    "url": file_url,
+                    "size": len(file_content),
+                    "uploaded_at": datetime.now().isoformat(),
+                    "case_id": request.caseId if request.caseId else None,
+                    "metadata": {
+                        "original_name": request.fileName,
+                        "upload_source": "chat"
+                    }
+                }
+                
+                # Insert into documents table
+                db_result = supabase_client.table("documents").insert(document_data).execute()
+                print(f"[INFO] Database insert result: {db_result}")
+                
+                return {
+                    "success": True,
+                    "fileName": request.fileName,
+                    "filePath": file_path,
+                    "fileUrl": file_url,
+                    "message": "File uploaded successfully"
+                }
+                
+            except Exception as db_err:
+                print(f"[WARNING] Database insert failed: {db_err}")
+                # Continue anyway since the file was uploaded
+                return {
+                    "success": True,
+                    "fileName": request.fileName,
+                    "filePath": file_path,
+                    "fileUrl": file_url,
+                    "message": "File uploaded successfully, but database record creation failed"
+                }
+                
+        except Exception as upload_err:
+            error_msg = str(upload_err)
+            print(f"[ERROR] File upload failed: {error_msg}")
+            return {"success": False, "error": f"Failed to upload file: {error_msg}"}
+            
     except Exception as e:
-        print(f"[ERROR] File upload error: {e}")
-        return {
-            "status": "error",
-            "message": f"Failed to upload file: {str(e)}",
-            "error": str(e)
-        }
+        error_msg = str(e)
+        print(f"[ERROR] Unexpected error in upload process: {error_msg}")
+        return {"success": False, "error": f"Upload process failed: {error_msg}"}
 
 
 
@@ -386,6 +490,50 @@ async def get_bots():
         {"id": "2", "name": "Trademark Bot", "description": "Trademark office action", "lastActive": "1 day ago"},
         {"id": "3", "name": "Holly vs. Waytt", "description": "CPS reports case", "lastActive": "3 days ago"},
     ]
+
+@app.get("/api/list-bucket-files")
+async def list_bucket_files():
+    """List all files in the 'documents' bucket"""
+    try:
+        # Get Supabase client with service role permissions
+        supabase_client = get_supabase_client()
+        
+        # Try to list files in the documents bucket
+        try:
+            bucket = supabase_client.storage.from_("documents")
+            files = bucket.list()
+            
+            # Format the response
+            file_list = []
+            for file in files:
+                try:
+                    file_url = bucket.get_public_url(file["name"])
+                    file_list.append({
+                        "name": file["name"],
+                        "size": file["metadata"]["size"],
+                        "created_at": file["metadata"]["lastModified"],
+                        "url": file_url
+                    })
+                except Exception as file_err:
+                    print(f"[WARNING] Error processing file {file['name']}: {file_err}")
+            
+            return {
+                "status": "success",
+                "files": file_list
+            }
+        except Exception as list_err:
+            print(f"[ERROR] Error listing files: {list_err}")
+            return {
+                "status": "error",
+                "error": str(list_err)
+            }
+    except Exception as e:
+        print(f"[ERROR] Bucket list error: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 
 if __name__ == "__main__":
     import uvicorn

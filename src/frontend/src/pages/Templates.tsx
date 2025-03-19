@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../context/ThemeContext';
 import AddTemplateForm from '../components/templates/AddTemplateForm';
@@ -15,14 +15,15 @@ const Templates: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
     const checkAdminStatus = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          navigate('/login');
+          // Don't redirect, just set admin to false
+          console.log('User not authenticated, viewing in non-admin mode');
+          setIsAdmin(false);
           return;
         }
 
@@ -33,11 +34,18 @@ const Templates: React.FC = () => {
           .eq('id', user.id)
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.warn('Error fetching profile, defaulting to non-admin:', error);
+          setIsAdmin(false);
+          return;
+        }
+        
         setIsAdmin(profile?.role === 'admin');
+        console.log('User authenticated, admin status:', profile?.role === 'admin');
       } catch (error) {
         console.error('Error checking admin status:', error);
-        navigate('/login');
+        // Don't redirect, just set admin to false
+        setIsAdmin(false);
       }
     };
 

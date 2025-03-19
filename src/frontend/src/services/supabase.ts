@@ -90,6 +90,30 @@ export const templates = {
       .select('*')
       .eq('id', id)
       .single();
+  },
+
+  createTemplate: async (templateData: any) => {
+    return await supabase
+      .from('templates')
+      .insert(templateData)
+      .select()
+      .single();
+  },
+  
+  updateTemplate: async (id: string, templateData: any) => {
+    return await supabase
+      .from('templates')
+      .update(templateData)
+      .eq('id', id)
+      .select()
+      .single();
+  },
+  
+  deleteTemplate: async (id: string) => {
+    return await supabase
+      .from('templates')
+      .delete()
+      .eq('id', id);
   }
 };
 

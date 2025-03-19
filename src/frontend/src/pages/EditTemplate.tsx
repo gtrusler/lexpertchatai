@@ -1,12 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
+import { templates } from '../services/supabase';
 import { useTheme } from '../context/ThemeContext';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 interface Template {
   id: string;
@@ -33,11 +29,7 @@ const EditTemplate: React.FC = () => {
     const fetchTemplate = async () => {
       try {
         if (!id) return;
-        const { data, error: fetchError } = await supabase
-          .from('lexpert.templates')
-          .select('*')
-          .eq('id', id)
-          .single();
+        const { data, error: fetchError } = await templates.getTemplate(id);
 
         if (fetchError) throw fetchError;
         if (!data) throw new Error('Template not found');
@@ -68,10 +60,7 @@ const EditTemplate: React.FC = () => {
         throw new Error('Template name must be 100 characters or fewer');
       }
 
-      const { error: updateError } = await supabase
-        .from('lexpert.templates')
-        .update({ name, description })
-        .eq('id', id);
+      const { error: updateError } = await templates.updateTemplate(id, { name, description });
 
       if (updateError) throw updateError;
 

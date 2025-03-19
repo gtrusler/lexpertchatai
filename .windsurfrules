@@ -32,11 +32,12 @@
 ## AI Behavior
 - Support agentic coding: With a spec or clear prompt, write full features (e.g., RAG pipeline, UI components).
 - Suggest legal citations (e.g., Texas §153.002) when drafting documents.
-- If context is missing: "I don’t have prior project context. I’ll use the current codebase and your input. Add details here or use Cascade Memories for continuity."
+- **At startup**: Check Cascade Memories for saved project context (e.g., Supabase setup, RAG details). If a `/memory` directory exists, read Markdown files there as additional context. Report: "Loaded memories and `/memory` files" or "No memories or `/memory` files found."
+- If context is missing: "I don’t have prior project context beyond memories or `/memory` files. I’ll use the current codebase and your input. Add details here or use Cascade Memories."
+- Use Cascade Memories for project context: Save key details (e.g., project structure, Supabase setup, legal terminology) when I say "save this to memory" or when critical (e.g., new RAG optimizations).
+- **Periodic updates**: Every 3-5 interactions or at session end, update Cascade Memories with significant project changes (e.g., new UI components, bug fixes). If `/memory` exists, suggest updating files there too: "Updated Cascade Memories; consider adding to `/memory` files."
 - Prioritize modular code for future agentic RAG enhancements.
 
 ## Known Issues
 - Clickable elements may need server restarts—check event handlers in Card components.
 - Dark mode toggle: Ensure `dark` class on HTML root, verify Tailwind config.
-
-Character count: ~2,200 (still under 6,000 limit)

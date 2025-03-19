@@ -109,27 +109,66 @@ const DocumentList: React.FC = () => {
         return;
       }
 
-      console.log('[DocumentList] Making Supabase query');
+      // First, get the actual files from the storage bucket
+      console.log('[DocumentList] Fetching files from storage bucket');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const storageResponse = await fetch(`${apiUrl}/api/list-bucket-files`);
+      
+      if (!storageResponse.ok) {
+        throw new Error(`Failed to fetch storage files: ${storageResponse.status}`);
+      }
+      
+      const storageData = await storageResponse.json();
+      const storageFiles = storageData.status === 'success' ? storageData.files : [];
+      const storageFilePaths = new Set(storageFiles.map((file: any) => file.name));
+      
+      console.log(`[DocumentList] Found ${storageFiles.length} files in storage bucket`);
+      
+      // Now get the database records
+      console.log('[DocumentList] Making Supabase query for database records');
       const { data, error } = await supabase
         .from('documents')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('[DocumentList] Error fetching documents:', error);
+        console.error('[DocumentList] Error fetching documents from database:', error);
         throw error;
       }
       
-      // Transform the data to match the expected Document interface
-      const transformedData = data?.map((doc: DatabaseDocument) => ({
+      // Filter out database records that don't have corresponding files in storage
+      const validDocuments = data?.filter((doc: DatabaseDocument) => {
+        const docPath = doc.metadata.path || '';
+        // Extract the filename from the path (remove any prefix like /documents/)
+        const fileName = docPath.includes('/') ? docPath.split('/').pop() || '' : docPath;
+        return storageFilePaths.has(fileName) || storageFilePaths.has(docPath);
+      }) || [];
+      
+      console.log(`[DocumentList] Filtered ${data?.length || 0} database records to ${validDocuments.length} valid documents`);
+      
+      // If there are invalid records, clean them up from the database
+      const invalidDocuments = data?.filter(doc => !validDocuments.includes(doc)) || [];
+      if (invalidDocuments.length > 0) {
+        console.log(`[DocumentList] Found ${invalidDocuments.length} invalid documents to remove from database`);
+        for (const doc of invalidDocuments) {
+          console.log(`[DocumentList] Removing invalid document from database: ${doc.id}`);
+          await supabase
+            .from('documents')
+            .delete()
+            .eq('id', doc.id);
+        }
+      }
+      
+      // Transform the valid data to match the expected Document interface
+      const transformedData = validDocuments.map((doc: DatabaseDocument) => ({
         id: doc.id,
         name: doc.metadata.name || 'Unnamed Document',
         path: doc.metadata.path || '',
         created_at: doc.created_at || new Date().toISOString(),
         tag: doc.metadata.tag || 'untagged'
-      })) || [];
+      }));
       
-      console.log(`[DocumentList] Fetched ${transformedData.length} documents`);
+      console.log(`[DocumentList] Final document count: ${transformedData.length}`);
       setDocuments(transformedData);
     } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch documents';

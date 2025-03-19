@@ -37,7 +37,7 @@ const TemplateList: React.FC<TemplateListProps> = ({ onTemplateSelect, refreshTr
         setError(null);
 
         const { data, error: supabaseError } = await supabase
-          .from('lexpert.templates')
+          .from('templates')
           .select('*')
           .order('created_at', { ascending: false });
 

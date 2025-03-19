@@ -36,7 +36,7 @@ const AddTemplateForm: React.FC<AddTemplateFormProps> = ({ onTemplateAdded }) =>
 
     try {
       const { data, error: supabaseError } = await supabase
-        .from('lexpert.templates')
+        .from('templates')
         .insert([{ name, description }]);
 
       if (supabaseError) {
