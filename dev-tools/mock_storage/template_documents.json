@@ -1,0 +1,37 @@
+{
+  "name": "template_documents",
+  "columns": [
+    {
+      "name": "template_id",
+      "type": "uuid",
+      "constraints": [
+        "not null"
+      ]
+    },
+    {
+      "name": "document_id",
+      "type": "uuid",
+      "constraints": [
+        "not null"
+      ]
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "default": "now()"
+    }
+  ],
+  "primary_key": [
+    "template_id",
+    "document_id"
+  ],
+  "foreign_keys": [
+    {
+      "columns": [
+        "template_id"
+      ],
+      "references": "templates(id)",
+      "on_delete": "cascade"
+    }
+  ]
+}

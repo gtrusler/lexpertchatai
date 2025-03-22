@@ -1,106 +1,93 @@
-{
-  "project": {
-    "name": "Lexpert Case AI",
-    "description": "A Retrieval-Augmented Generation (RAG) chatbot for family law and trademark attorneys (e.g., Cristi in Austin, TX) to draft legal documents, cite laws, and handle case-specific uploads. Target: 3-5s responses, 95% accuracy, CodeGuide-style UI (deep blue #0078D4, white cards, light gray #F5F6F7).",
-    "goals": [
-      "Deliver fast (3-5s), reliable, sourced outputs mid-trial.",
-      "Handle chaotic, shorthand prompts via auto-tagging and real-time prompt coach.",
-      "Ensure scalability for 100+ cases, 1GB+ docs, and marketability to Austin lawyers.",
-      "Future-proof for agentic RAG and cross-domain use (family law, trademarks)."
-    ]
-  },
-  "technical_constraints": {
-    "languages": ["Python", "JavaScript/TypeScript"],
-    "frameworks": {
-      "backend": ["LangChain", "LlamaIndex", "FastAPI", "Flask", "spaCy", "Hugging Face"],
-      "frontend": ["Streamlit (MVP)", "React.js + Tailwind CSS (polish, optional CodeGuide Starter Pro)"]
-    },
-    "databases": {
-      "primary": "Supabase (PostgreSQL with pgvector for VectorDB, Storage for files, Auth for users)",
-      "caching": "Redis (optional for base layer, 1s+ speed boost)"
-    },
-    "ai_models": ["OpenAI GPT-4o", "Anthropic Claude 3.5 Sonnet", "xAI Grok (optional)", "spaCy/Hugging Face (NLP for auto-tagging)"],
-    "performance": {
-      "response_time": "3-5s for mid-trial, 3-6s typical, benchmark 15 prompts",
-      "accuracy": "95% (no hallucinations, no retrieval loops)",
-      "scalability": "Handle 100+ cases, 1GB+ docs, 50+ concurrent users"
-    },
-    "security": {
-      "privacy": "Private projects by default, encrypted uploads (Supabase Storage), legal compliance (Texas bar rules, GDPR)",
-      "auth": "Supabase Auth (email/password, OAuth)"
-    }
-  },
-  "coding_rules": {
-    "style": {
-      "ui": {
-        "color_scheme": "Deep blue (#0078D4) for headers/buttons, white cards, light gray (#F5F6F7) background, sans-serif fonts (Inter/Roboto)",
-        "layout": "Clean cards, minimal animations, mobile-responsive, ADA-compliant",
-        "components": ["Chat interface", "Wizard (5-step, optional)", "Prompt coach tooltip (blue #0078D4, real-time, dismissible)", "Upload icons (PDFs/Word)", "Sourcing footers (gray on white, e.g., ‘Based on: Texas §153.002, p. 2’)"]
-      },
-      "code": {
-        "python": "PEP 8, type hints with Pydantic, modular (e.g., RAG pipeline, auto-tagging, sourcing)",
-        "javascript/typescript": "ESLint, Tailwind CSS classes, React components for polished UI"
-      }
-    },
-    "optimization": {
-      "speed": "Chunk legal docs (e.g., Texas Family Code, office actions) into 500-token segments, use Supabase VectorDB indexing (HNSW/IVF), Redis caching if >5s",
-      "tagging": "Auto-tag uploads (e.g., ‘petition,’ ‘office_action,’ ‘example’) with spaCy, 85%+ confidence, prompt for confirmation if <85% (blue tooltip)",
-      "retrieval": "Standard RAG (LangChain/LlamaIndex) for base/case layers, no loops, no hallucinations"
-    }
-  },
-  "development_process": {
-    "phases": [
-      {
-        "name": "Prototype (Week 1, Feb 23–Mar 1, 2025)",
-        "tasks": [
-          "Implement LangChain RAG with Supabase VectorDB, chunk Texas Family Code and trademark office action into 500-token segments, store in Supabase, target 3-5s responses.",
-          "Create Streamlit chat UI with blue #0078D4 theme, prompt coach, upload icons, sourcing footers.",
-          "Build spaCy-based auto-tagging, 85%+ confidence, sync to Supabase VectorDB.",
-          "Test with Cristi’s Feb 22 trademark prompt (‘summarize this, draft a response, use law’), benchmark 5 prompts."
-        ]
-      },
-      {
-        "name": "Core Features (Weeks 2–3)",
-        "tasks": [
-          "Design 5-step Streamlit wizard, blue #0078D4, drag-drop docs, auto-tag, optional toggle.",
-          "Enhance prompt coach, rules-based NLP, blue tooltip, suggest structured prompts (e.g., ‘Use [doc] to [task], cite [law]’).",
-          "Refine sourcing footers, tag Supabase entries, ensure no latency impact.",
-          "Test with Weyl family law case, benchmark 10 prompts."
-        ]
-      },
-      {
-        "name": "Polish and Scale (Weeks 4–6)",
-        "tasks": [
-          "Redesign Streamlit UI in React.js/Tailwind CSS (optional CodeGuide Starter Pro), CodeGuide style, include chat, wizard, prompt coach.",
-          "Optimize Supabase VectorDB queries, add Redis caching, benchmark 15 prompts for 3-5s, scale for 100+ cases.",
-          "Design modular hooks for future agentic RAG, integrate with Supabase.",
-          "Market beta to Austin lawyers."
-        ]
-      }
-    ],
-    "tools": {
-      "primary": "Cursor (AI coding in VS Code for Python/Streamlit, core development)",
-      "optional": "WinSurf (React.js/Tailwind CSS polish, Phase 3), CodeGuide Starter Pro (React.js/Tailwind CSS polish, Phase 3)"
-    }
-  },
-  "testing_guidelines": {
-    "prompts": [
-      "Draft custody motion for Rachel, cite Texas §153.002.",
-      "Summarize CPS reports for Waytt vs. Holly.",
-      "Summarize this, draft a response, use law (trademark office action).",
-      "Draft Temporary Orders for Ava, cite Texas §153.002.",
-      "Create examination questions for Benny, focus on non-compliance."
-    ],
-    "criteria": {
-      "speed": "3-5s mid-trial, 3-6s typical, no delays >5s",
-      "accuracy": "95% (correct legal citations, no hallucinations)",
-      "usability": "Intuitive for tech-averse users, <5 clicks for core tasks, 90% satisfaction",
-      "scalability": "Handle 50+ docs, 10 users in Week 4, 100+ cases, 1GB+ docs by Week 6"
-    }
-  },
-  "notes": {
-    "legal_compliance": "Ensure privacy (private projects, encrypted uploads), comply with Texas bar rules, GDPR for scalability.",
-    "user_feedback": "Prioritize Cristi’s feedback (e.g., <5s responses, trust in sourcing) for iterative testing.",
-    "future_proofing": "Design modular code for agentic RAG, trademarks, and market expansion (e.g., hooks for multi-agent tasks)."
-  }
-}
+# Lexpert Case AI - Project Rules
+
+## Project-Specific Configuration
+- **Frontend Port**: Default http://localhost:5173
+- **Backend Port**: Default http://localhost:8000
+- **Primary Color**: Deep blue (#0078D4) for headers and buttons
+- **Environment Variables**: Store in `.env` file in frontend directory with VITE_ prefix
+
+## Current Priority Focus
+- Debugging Documents page blank screen issue
+- Enhancing Templates feature with document connections
+- Implementing proper error handling for Supabase operations
+- Maintaining consistent loading states and user feedback
+
+## Component Structure
+- Follow established component hierarchy pattern:
+  - Container components handle logic and state
+  - Presentational components focus on UI
+  - Error/loading states handled consistently across features
+
+## Supabase Integration
+- Direct storage uploads with proper bucket validation
+- Row Level Security policies for all tables
+- Admin-only write access for sensitive operations
+- Authentication through Supabase Auth
+- Specific error handling for Supabase operations
+
+## Code Preservation Guidelines
+- ALWAYS preserve existing functionality when adding new features
+- Before modifying ANY code, thoroughly analyze how it currently works
+- Make incremental changes that can be individually verified
+- Focus changes ONLY on the specific task requested
+- Maintain consistent patterns across the codebase
+- Do not modify function signatures or APIs without explicit approval
+- When fixing issues, use the smallest possible change to resolve the problem
+- Preserve existing error handling, loading states, and user feedback mechanisms
+- Test all existing functionality after making changes
+- If unsure about potential side effects, present a plan before implementing
+
+## Implementation Workflow
+- For any significant change, follow this process:
+  1. Analyze the existing code and identify all affected components
+  2. Present a plan outlining specific changes and potential risks
+  3. Wait for approval before implementing
+  4. Make changes incrementally, testing after each step
+  5. Verify both new and existing functionality works correctly
+  6. Summarize what was changed and any areas to monitor
+- ALWAYS kill any running server processes before starting new ones
+- Check for processes running on ports 5173 and 8000 before launch
+- Use appropriate commands to terminate processes (e.g., `lsof -i :5173` and `kill -9 PID`)
+
+## Project-Specific Commands
+- **Test Environment Variables**: Navigate to `/env-test` page
+- **Check Document Upload**: Monitor browser console during upload
+- **Test Supabase Connection**: Try direct API calls if components fail
+
+## Debugging Tools
+- Add `?debug=true` to URLs to enable enhanced console logging
+- Set `DEBUG_SUPABASE=true` in localStorage for Supabase operation logging
+- Use browser Storage tab to verify localStorage/sessionStorage values
+- Check Network tab for failed Supabase requests
+
+## When Debugging Issues
+- Focus only on the specific issue being fixed
+- Preserve unrelated functionality
+- Consider the full component lifecycle
+- Check for state management issues
+- Verify Supabase connections and error handling
+- Test across different browsers and viewport sizes
+- Monitor console for errors during operations
+
+## Component Style Guide
+- Tailwind dark mode with `dark:` prefix
+- Responsive designs with mobile-first approach
+- Consistent spacing with Tailwind's spacing scale
+- Proper loading states for all async operations
+- Error feedback with user-friendly messages
+
+## File Naming Conventions
+- React components: PascalCase.tsx
+- Utility functions: camelCase.ts
+- Context providers: XxxContext.tsx
+- Page components: PascalCase.tsx in pages directory
+
+## IDE Shortcuts Reference
+- Fix blank Documents page: Check Supabase connectivity and environment variables
+- Debug template connections: Verify template_documents junction table
+- Test document uploads: Monitor browser console during operations
+
+## Key Project Links
+- Project preview: http://localhost:5173
+- API documentation: http://localhost:8000/docs
+- Supabase dashboard: Check `.env` for URL

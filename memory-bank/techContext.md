@@ -520,35 +520,76 @@ interface NavigationState {
 ### Templates Table
 
 ```sql
-CREATE TABLE lexpert.templates (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE public.templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
   description TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  content TEXT,
+  prompt TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 ```
+
+### Template Documents Junction Table
+
+```sql
+CREATE TABLE public.template_documents (
+  template_id UUID NOT NULL REFERENCES public.templates(id) ON DELETE CASCADE,
+  document_id UUID NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  PRIMARY KEY (template_id, document_id)
+);
+```
+
+This junction table establishes a many-to-many relationship between templates and documents, allowing templates to reference multiple documents as knowledge sources for generation.
 
 ### Access Control
 
 ```sql
-ALTER TABLE lexpert.templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.templates ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Enable read access for all authenticated users" ON lexpert.templates
-  FOR SELECT
-  TO authenticated
-  USING (true);
+-- Create policy to allow anyone to read templates
+CREATE POLICY "templates_select_policy" 
+ON public.templates 
+FOR SELECT 
+USING (true);
 
-CREATE POLICY "Enable insert access for admin users only" ON lexpert.templates
-  FOR INSERT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
+-- Create policy to allow authenticated users to insert templates
+CREATE POLICY "templates_insert_policy" 
+ON public.templates 
+FOR INSERT 
+TO authenticated
+WITH CHECK (true);
+
+-- Create policy to allow authenticated users to update templates
+CREATE POLICY "templates_update_policy" 
+ON public.templates 
+FOR UPDATE 
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+-- Create policy to allow authenticated users to delete templates
+CREATE POLICY "templates_delete_policy" 
+ON public.templates 
+FOR DELETE 
+TO authenticated
+USING (true);
+
+-- Add a trigger to update the updated_at timestamp
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_templates_updated_at
+BEFORE UPDATE ON public.templates
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
 ```
 
 ### Templates System
@@ -563,12 +604,13 @@ CREATE POLICY "Enable insert access for admin users only" ON lexpert.templates
 - **Database Schema**:
 
   ```sql
-  CREATE TABLE lexpert.templates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  CREATE TABLE public.templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL UNIQUE,
     description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    content TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
   );
   ```
 

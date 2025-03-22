@@ -9,6 +9,7 @@ import os
 import json
 import time
 import uuid
+import asyncio
 
 # Import RAG components
 from rag.pipeline import (
@@ -17,6 +18,12 @@ from rag.pipeline import (
 
 # Import auth middleware
 from auth import verify_supabase_jwt
+
+# Import storage management utilities
+from storage import (
+    check_bucket_exists, create_bucket, setup_bucket_policies,
+    create_template_documents_table, list_bucket_files
+)
 
 
 app = FastAPI(title="Lexpert Case AI API")
@@ -59,6 +66,17 @@ class PromptCoachRequest(BaseModel):
 
 class PromptCoachResponse(BaseModel):
     tooltip: Optional[str] = None
+
+
+# Storage management models
+class BucketRequest(BaseModel):
+    bucketName: str
+
+
+class BucketResponse(BaseModel):
+    exists: bool
+    message: str
+    error: Optional[str] = None
 
 
 # Authentication dependency
@@ -166,6 +184,37 @@ async def prompt_coach(
     tooltip = get_prompt_coach(request.prompt)
     
     return PromptCoachResponse(tooltip=tooltip)
+
+
+# Storage management routes
+@app.post("/api/check-bucket-exists")
+async def check_bucket_exists_endpoint(request: BucketRequest):
+    result = await check_bucket_exists(request.bucketName)
+    return result
+
+
+@app.post("/api/create-bucket")
+async def create_bucket_endpoint(request: BucketRequest):
+    result = await create_bucket(request.bucketName)
+    return result
+
+
+@app.post("/api/setup-bucket-policies")
+async def setup_bucket_policies_endpoint(request: BucketRequest):
+    result = await setup_bucket_policies(request.bucketName)
+    return result
+
+
+@app.post("/api/create-template-documents-table")
+async def create_template_documents_table_endpoint():
+    result = await create_template_documents_table()
+    return result
+
+
+@app.get("/api/list-bucket-files")
+async def list_bucket_files_endpoint():
+    result = await list_bucket_files("documents")
+    return result
 
 
 if __name__ == "__main__":

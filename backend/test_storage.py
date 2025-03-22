@@ -58,7 +58,7 @@ try:
     
     # Try to get the public URL
     try:
-        file_url = bucket.get_public_url(file_path)
+        file_url = bucket.create_signed_url(file_path, 3600)
         print(f"[TEST] Generated public URL: {file_url}")
     except Exception as url_err:
         print(f"[TEST WARNING] Could not generate public URL: {url_err}")

@@ -159,13 +159,13 @@ async function testStorage() {
             console.log('✅ File uploaded successfully');
             console.log('Upload result:', uploadData);
             
-            // Get public URL
-            const { data: urlData } = serviceClient
+            // Get signed URL
+            const { data: urlData } = await serviceClient
               .storage
               .from(bucketToTest)
-              .getPublicUrl(fileName);
+              .createSignedUrl(fileName, 60 * 60); // 1 hour expiry
               
-            console.log('Public URL:', urlData.publicUrl);
+            console.log('Signed URL:', urlData.signedUrl);
             
             // Clean up
             console.log('Cleaning up...');

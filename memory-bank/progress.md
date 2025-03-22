@@ -1,5 +1,47 @@
 # Project Progress
 
+## Template Enhancements and Document Connections (3/20/2025) - COMPLETED ✅
+✅ **Template Feature Enhancements**
+- Added `prompt` field to templates table for storing generation prompts
+- Created `template_documents` junction table for many-to-many relationships
+- Updated frontend components to support the new fields and relationships
+- Added UI for selecting documents as knowledge sources for templates
+- Enhanced DocumentList to show which templates each document is connected to
+- Updated database schema documentation in techContext.md
+- Created migration scripts for database schema changes
+
+### Implementation Details
+- Added template-document connections:
+  - Junction table with template_id and document_id
+  - RLS policies for proper access control
+  - UI for selecting and managing document connections
+- Enhanced template form with prompt field for AI generation guidance
+- Updated Supabase service with new methods for managing template-document connections
+
+## Templates Table Implementation (3/19/2025) - COMPLETED ✅
+✅ **Templates Functionality Implemented**
+- Created `templates` table in Supabase public schema
+- Implemented Row Level Security (RLS) policies for proper access control
+- Added auto-updating timestamp trigger for `updated_at` field
+- Fixed "relation 'public.templates' does not exist" error
+- Inserted sample template for testing
+- Verified templates page functionality
+
+### Implementation Details
+- Table Structure:
+  - `id`: UUID primary key with auto-generation
+  - `name`: TEXT (unique, not null)
+  - `description`: TEXT
+  - `content`: TEXT
+  - `created_at` and `updated_at`: Timestamps
+- RLS Policies:
+  - Anyone can read templates
+  - Authenticated users can create, update, and delete templates
+- Created migration scripts:
+  - `templates_migration.sql`: Original migration script
+  - `simplified_templates_migration.sql`: Improved version with proper RLS syntax
+  - `basic_templates_table.sql`: Minimal version for quick setup
+
 ## Backend Refactoring (3/19/2025) - COMPLETED ✅
 ✅ **Modular Architecture Implemented**
 - Refactored from monolithic to modular structure

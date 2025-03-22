@@ -1,0 +1,14 @@
+{
+  "name": "lexpert-case-ai-dev-tools",
+  "version": "1.0.0",
+  "description": "Development tools for Lexpert Case AI",
+  "type": "module",
+  "scripts": {
+    "fix-supabase": "node fix_supabase_rls.js",
+    "start-backend": "node simple_backend.py"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.7",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "read": "authenticated",
+  "insert": "authenticated",
+  "update": "authenticated",
+  "delete": "authenticated"
+}

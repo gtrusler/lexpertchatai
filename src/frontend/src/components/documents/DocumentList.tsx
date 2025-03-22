@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { checkEnvironmentVariables } from '../../utils/envCheck';
+import { storage } from '../../services/supabase';
+import TagSelector from '../tags/TagSelector';
+import tagService from '../../services/tagService';
 
 // Debug flag - set to true to enable console logging
 const DEBUG = true;
@@ -40,7 +43,7 @@ try {
     storage: {
       from: () => ({
         remove: async () => ({ data: null, error: { message: 'Supabase client initialization failed' } }),
-        getPublicUrl: () => ({ data: { publicUrl: '' } })
+        createSignedUrl: async () => ({ data: { signedUrl: '' }, error: null })
       })
     }
   };
@@ -57,12 +60,19 @@ interface DatabaseDocument {
   created_at: string;
 }
 
+interface Template {
+  id: string;
+  name: string;
+}
+
 interface Document {
   id: string;
   name: string;
   path: string;
   created_at: string;
   tag: string;
+  templates?: Template[];
+  tags?: string[];
 }
 
 const DocumentList: React.FC = () => {
@@ -71,6 +81,8 @@ const DocumentList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [documentTagsMap, setDocumentTagsMap] = useState<Record<string, string[]>>({});
+  const [tagsLoading, setTagsLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     console.log('[DocumentList] Component mounting');
@@ -111,18 +123,73 @@ const DocumentList: React.FC = () => {
 
       // First, get the actual files from the storage bucket
       console.log('[DocumentList] Fetching files from storage bucket');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const storageResponse = await fetch(`${apiUrl}/api/list-bucket-files`);
       
-      if (!storageResponse.ok) {
-        throw new Error(`Failed to fetch storage files: ${storageResponse.status}`);
+      // We'll implement a flat structure approach with metadata for associations
+      let allStorageFiles: any[] = [];
+      let storageFiles: any[] = [];
+      try {
+        console.log('[DocumentList] Listing all files in documents bucket');
+        
+        // First, list files at the root level
+        const { data: rootFiles, error: rootError } = await supabase.storage
+          .from('documents')
+          .list('', {
+            limit: 100,
+            sortBy: { column: 'name', order: 'asc' }
+          });
+          
+        if (rootError) {
+          console.error('[DocumentList] Error listing root files:', rootError);
+          throw new Error(`Error listing root files: ${rootError.message}`);
+        }
+        
+        // Add root files to our collection
+        const files = rootFiles || [];
+        allStorageFiles = [...files];
+        
+        // Check if there are any folders at the root level
+        const folders = files.filter((item: any) => item.id === null);
+        
+        // If we have folders, list files in each folder
+        for (const folder of folders) {
+          console.log(`[DocumentList] Listing files in subfolder: ${folder.name}`);
+          
+          const { data: folderFiles, error: folderError } = await supabase.storage
+            .from('documents')
+            .list(folder.name, {
+              limit: 100,
+              sortBy: { column: 'name', order: 'asc' }
+            });
+            
+          if (folderError) {
+            console.error(`[DocumentList] Error listing files in folder ${folder.name}:`, folderError);
+            // Don't throw here, just log and continue with other folders
+            continue;
+          }
+          
+          // Add folder path to each file and add to our collection
+          const filesWithPath = (folderFiles || []).map((file: any) => ({
+            ...file,
+            // Store the full path for later use
+            fullPath: `${folder.name}/${file.name}`
+          }));
+          
+          allStorageFiles = [...allStorageFiles, ...filesWithPath];
+        }
+        
+        // Filter out folders, we only want files
+        storageFiles = allStorageFiles.filter((file: any) => file.id !== null);
+        
+        console.log(`[DocumentList] Found ${storageFiles.length} total files in bucket:`, storageFiles);
+      } catch (err: any) {
+        console.error('[DocumentList] Error accessing storage:', err);
+        throw new Error(`Error accessing storage: ${err.message}`);
       }
       
-      const storageData = await storageResponse.json();
-      const storageFiles = storageData.status === 'success' ? storageData.files : [];
-      const storageFilePaths = new Set(storageFiles.map((file: any) => file.name));
+      console.log('[DocumentList] Storage files:', storageFiles);
+      const storageFilePaths = new Set(storageFiles.map((file: any) => file.name) || []);
       
-      console.log(`[DocumentList] Found ${storageFiles.length} files in storage bucket`);
+      console.log(`[DocumentList] Found ${storageFiles.length || 0} files in storage bucket`);
       
       // Now get the database records
       console.log('[DocumentList] Making Supabase query for database records');
@@ -147,7 +214,7 @@ const DocumentList: React.FC = () => {
       console.log(`[DocumentList] Filtered ${data?.length || 0} database records to ${validDocuments.length} valid documents`);
       
       // If there are invalid records, clean them up from the database
-      const invalidDocuments = data?.filter(doc => !validDocuments.includes(doc)) || [];
+      const invalidDocuments = data?.filter((doc: DatabaseDocument) => !validDocuments.includes(doc)) || [];
       if (invalidDocuments.length > 0) {
         console.log(`[DocumentList] Found ${invalidDocuments.length} invalid documents to remove from database`);
         for (const doc of invalidDocuments) {
@@ -160,16 +227,142 @@ const DocumentList: React.FC = () => {
       }
       
       // Transform the valid data to match the expected Document interface
-      const transformedData = validDocuments.map((doc: DatabaseDocument) => ({
+      const transformedData = validDocuments.map((doc: DatabaseDocument): Document => ({
         id: doc.id,
         name: doc.metadata.name || 'Unnamed Document',
         path: doc.metadata.path || '',
         created_at: doc.created_at || new Date().toISOString(),
-        tag: doc.metadata.tag || 'untagged'
+        tag: doc.metadata.tag || 'untagged',
+        templates: [] // Will be populated below
       }));
+      
+      // Fetch template connections for each document
+      console.log('[DocumentList] Fetching template connections');
+      try {
+        // Check if template_documents table exists by making a small query
+        const { error: tableCheckError } = await supabase
+          .from('template_documents')
+          .select('template_id')
+          .limit(1);
+          
+        // If we get a specific error about the relation not existing, handle it gracefully
+        if (tableCheckError) {
+          if (tableCheckError.code === '42P01') {
+            console.log('[DocumentList] template_documents table does not exist yet, skipping template connections');
+          } else {
+            console.warn('[DocumentList] Error checking template_documents table:', tableCheckError);
+          }
+          // Continue without template connections
+        } else {
+          // Table exists, proceed with fetching connections
+          console.log('[DocumentList] template_documents table exists, fetching connections');
+          const { data: templateConnections, error: templateError } = await supabase
+            .from('template_documents')
+            .select('template_id, document_id');
+            
+          if (templateError) {
+            console.error('[DocumentList] Error fetching template connections:', templateError);
+          } else {
+            console.log(`[DocumentList] Found ${templateConnections?.length || 0} template connections`);
+            
+            if (templateConnections && templateConnections.length > 0) {
+              // Get all templates
+              const { data: templatesData, error: templatesError } = await supabase
+                .from('templates')
+                .select('id, name');
+                
+              if (templatesError) {
+                console.error('[DocumentList] Error fetching templates:', templatesError);
+              } else if (templatesData) {
+                console.log(`[DocumentList] Found ${templatesData.length} templates`);
+                
+                // Create a map of template id to template object for quick lookup
+                const templatesMap = new Map<string, Template>();
+                templatesData.forEach((template: Template) => {
+                  templatesMap.set(template.id, template);
+                });
+                
+                // For each document, find its template connections
+                transformedData.forEach((doc: Document) => {
+                  const docTemplates: Template[] = [];
+                  templateConnections.forEach((conn: any) => {
+                    if (conn.document_id === doc.id) {
+                      const template = templatesMap.get(conn.template_id);
+                      if (template) {
+                        docTemplates.push(template);
+                      }
+                    }
+                  });
+                  doc.templates = docTemplates;
+                  if (docTemplates.length > 0) {
+                    console.log(`[DocumentList] Document ${doc.name} has ${docTemplates.length} templates`);
+                  }
+                });
+              }
+            }
+          }
+        }
+      } catch (templateErr) {
+        console.error('[DocumentList] Error processing template connections:', templateErr);
+        // Continue without template connections rather than failing the whole document list
+      }
       
       console.log(`[DocumentList] Final document count: ${transformedData.length}`);
       setDocuments(transformedData);
+      
+      // Fetch tags for each document
+      console.log('[DocumentList] Fetching tags for documents');
+      const tagsMap: Record<string, string[]> = {};
+      const loadingMap: Record<string, boolean> = {};
+      
+      for (const doc of transformedData) {
+        loadingMap[doc.id] = true;
+      }
+      setTagsLoading(loadingMap);
+      
+      try {
+        // Check if tag_hierarchy table exists
+        const { error: tableCheckError } = await supabase
+          .from('tag_hierarchy')
+          .select('id')
+          .limit(1);
+          
+        if (tableCheckError) {
+          if (tableCheckError.code === '42P01') {
+            console.log('[DocumentList] tag_hierarchy table does not exist yet, skipping tag fetching');
+          } else {
+            console.warn('[DocumentList] Error checking tag_hierarchy table:', tableCheckError);
+          }
+          // Continue without tags
+          for (const doc of transformedData) {
+            loadingMap[doc.id] = false;
+          }
+          setTagsLoading({...loadingMap});
+        } else {
+          // Table exists, fetch tags for each document
+          for (const doc of transformedData) {
+            try {
+              const tags = await tagService.getDocumentTags(doc.id);
+              tagsMap[doc.id] = tags.map(tag => tag.id);
+              loadingMap[doc.id] = false;
+              setTagsLoading({...loadingMap});
+              console.log(`[DocumentList] Fetched ${tags.length} tags for document ${doc.id}`);
+            } catch (tagErr) {
+              console.error(`[DocumentList] Error fetching tags for document ${doc.id}:`, tagErr);
+              loadingMap[doc.id] = false;
+              setTagsLoading({...loadingMap});
+            }
+          }
+          setDocumentTagsMap(tagsMap);
+        }
+      } catch (tagErr) {
+        console.error('[DocumentList] Error processing document tags:', tagErr);
+        // Continue without tags rather than failing the whole document list
+        for (const doc of transformedData) {
+          loadingMap[doc.id] = false;
+        }
+        setTagsLoading({...loadingMap});
+      }
     } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch documents';
       console.error('[DocumentList] Error fetching documents:', err);
@@ -180,181 +373,187 @@ const DocumentList: React.FC = () => {
     }
   };
 
+  const handleTagChange = async (documentId: string, selectedTags: string[]) => {
+    console.log(`[DocumentList] Updating tags for document ${documentId}`, selectedTags);
+    try {
+      // Get current tags for the document
+      const currentTags = await tagService.getDocumentTags(documentId);
+      const currentTagIds = currentTags.map(tag => tag.id);
+      
+      // Remove tags that are no longer selected
+      const tagsToRemove = currentTagIds.filter(tagId => !selectedTags.includes(tagId));
+      for (const tagId of tagsToRemove) {
+        await tagService.removeTagFromDocument(documentId, tagId);
+      }
+      
+      // Add newly selected tags
+      const tagsToAdd = selectedTags.filter(tagId => !currentTagIds.includes(tagId));
+      for (const tagId of tagsToAdd) {
+        await tagService.addTagToDocument(documentId, tagId);
+      }
+      
+      // Update the local state
+      setDocumentTagsMap(prev => ({
+        ...prev,
+        [documentId]: selectedTags
+      }));
+      
+      console.log(`[DocumentList] Updated tags for document ${documentId}: removed ${tagsToRemove.length}, added ${tagsToAdd.length}`);
+      setSuccess('Tags updated successfully');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update tags';
+      console.error(`[DocumentList] Error updating tags for document ${documentId}:`, err);
+      setError(errorMessage);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+  
   const handleDelete = async (id: string, path: string) => {
     console.log(`[DocumentList] Deleting document: ${id}, path: ${path}`);
     try {
       // Use backend API to check if bucket exists
       console.log('[DocumentList] Checking if storage bucket exists via backend API');
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${apiUrl}/api/check-bucket-exists`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ bucketName: 'documents' })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.status !== 'success' || !data.exists) {
-          console.error('[DocumentList] Documents bucket does not exist');
-          throw new Error('Documents storage is not properly configured');
-        }
-      } catch (err) {
-        console.error('[DocumentList] Error checking storage bucket:', err);
-        throw err;
-      }
       
-      // Delete from Storage
-      console.log('[DocumentList] Deleting from storage');
-      const { error: storageError } = await supabase.storage
-        .from('documents')
-        .remove([path]);
+      // First delete the file from storage
+      console.log(`[DocumentList] Deleting file from storage: ${path}`);
+      const { error: storageError } = await storage.deleteFile('documents', path);
       
       if (storageError) {
-        console.error('[DocumentList] Error deleting document from storage:', storageError);
-        throw storageError;
+        console.error('[DocumentList] Error deleting file from storage:', storageError);
+        throw new Error(`Error deleting file from storage: ${storageError.message}`);
       }
-
-      // Delete from database
-      console.log('[DocumentList] Deleting from database');
+      
+      // Then delete the database record
+      console.log(`[DocumentList] Deleting database record: ${id}`);
       const { error: dbError } = await supabase
         .from('documents')
         .delete()
         .eq('id', id);
-      
+        
       if (dbError) {
-        console.error('[DocumentList] Error deleting document from database:', dbError);
-        throw dbError;
+        console.error('[DocumentList] Error deleting database record:', dbError);
+        throw new Error(`Error deleting database record: ${dbError.message}`);
       }
-
-      console.log('[DocumentList] Document deleted successfully');
-      // Update local state
-      setDocuments(documents.filter(doc => doc.id !== id));
       
-      // Show success message
+      // Update the UI by filtering out the deleted document
+      setDocuments(documents.filter(doc => doc.id !== id));
       setSuccess('Document deleted successfully');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete document';
       console.error('[DocumentList] Error deleting document:', err);
       setError(errorMessage);
-      
-      // Clear error after 5 seconds
-      setTimeout(() => setError(null), 5000);
+      setTimeout(() => setError(null), 3000);
     }
   };
 
-  if (loading) {
-    console.log('[DocumentList] Rendering loading state');
-    return (
-      <div className="flex justify-center items-center py-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0078D4] mx-auto mb-2"></div>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Loading documents...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    console.log('[DocumentList] Rendering error state:', error);
-    return (
-      <div className="text-red-600 dark:text-red-400 p-4 bg-red-100 dark:bg-red-900/20 rounded">
-        <p className="mb-2">{error}</p>
-        <button 
-          onClick={() => {
-            console.log('[DocumentList] Retry button clicked');
-            setError(null);
-            setLoading(true);
-            fetchDocuments();
-          }}
-          className="text-sm bg-red-200 dark:bg-red-800 px-3 py-1 rounded hover:bg-red-300 dark:hover:bg-red-700"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  console.log('[DocumentList] Rendering document list, count:', documents.length);
   return (
-    <div className="space-y-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
       {success && (
-        <div className="text-green-600 dark:text-green-400 p-4 bg-green-100 dark:bg-green-900/20 rounded mb-4">
-          <p>{success}</p>
+        <div className="text-green-500 dark:text-green-400 p-4 mb-4 rounded-lg bg-green-50 dark:bg-green-900/20">
+          <p className="font-semibold">{success}</p>
         </div>
       )}
-      {documents.length === 0 ? (
-        <p className="text-gray-500 dark:text-gray-400">No documents available.</p>
-      ) : (
-        documents.map(doc => (
-          <div
-            key={doc.id}
-            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/70 transition-colors"
+      {loading ? (
+        <div className="flex justify-center items-center h-40">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#0078D4]"></div>
+        </div>
+      ) : error ? (
+        <div className="text-red-500 dark:text-red-400 p-4 rounded-lg bg-red-50 dark:bg-red-900/20">
+          <p className="font-semibold">Error: {error}</p>
+          <button 
+            onClick={fetchDocuments} 
+            className="mt-2 px-4 py-2 bg-[#0078D4] hover:bg-[#0078D4]/80 text-white rounded"
           >
-            <div className="flex-1">
-              <h3 className="text-gray-800 dark:text-gray-100 font-medium">{doc.name}</h3>
-              <div className="flex items-center space-x-4 mt-1">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {new Date(doc.created_at).toLocaleDateString()}
-                </span>
-                <span className="text-sm px-2 py-1 bg-[#0078D4]/10 text-[#0078D4] dark:text-[#0078D4] rounded">
-                  {doc.tag || 'untagged'}
-                </span>
+            Retry
+          </button>
+        </div>
+      ) : documents.length === 0 ? (
+        <div className="text-center p-8">
+          <p className="text-gray-500 dark:text-gray-400 mb-4">No documents found</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">
+            Upload documents from the chat interface or using the upload button
+          </p>
+        </div>
+      ) : (
+        documents.map((doc) => (
+          <div key={doc.id} className="border-b dark:border-gray-700 py-4 flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">{doc.name}</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {new Date(doc.created_at).toLocaleDateString()} • {doc.tag}
+              </p>
+              <div className="mt-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Tags:</div>
+                {tagsLoading[doc.id] ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#0078D4] mr-2"></div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Loading tags...</span>
+                  </div>
+                ) : (
+                  <TagSelector
+                    selectedTags={documentTagsMap[doc.id] || []}
+                    onChange={(tags) => handleTagChange(doc.id, tags)}
+                    entityType="document"
+                    entityId={doc.id}
+                    className="w-full max-w-md"
+                  />
+                )}
               </div>
+              {doc.templates && doc.templates.length > 0 && (
+                <div className="mt-1">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">Used in templates:</span>
+                  {doc.templates.map((template, idx) => (
+                    <span key={template.id} className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded mr-1">
+                      {template.name}{idx < doc.templates!.length - 1 ? '' : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex space-x-1">
               <button
                 onClick={() => {
                   console.log('[DocumentList] View document button clicked for:', doc.id);
                   
-                  // Check if the storage bucket exists using backend API
-                  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-                  fetch(`${apiUrl}/api/check-bucket-exists`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ bucketName: 'documents' })
-                  })
-                  .then(response => {
-                    if (!response.ok) {
-                      throw new Error(`API error: ${response.status}`);
-                    }
-                    return response.json();
-                  })
-                  .then(data => {
-                    if (data.status !== 'success' || !data.exists) {
-                      console.error('[DocumentList] Documents bucket does not exist');
-                      throw new Error('Documents storage is not properly configured');
+                  try {
+                    // Extract the file path from the full path
+                    // Handle both flat and nested structures
+                    let filePath = doc.path;
+                    
+                    // Remove /documents/ prefix if present
+                    if (filePath.startsWith('/documents/')) {
+                      filePath = filePath.substring('/documents/'.length);
                     }
                     
-                    // If bucket exists, get the URL
-                    // Extract the file path from the full path (remove the /documents/ prefix if present)
-                    const filePath = doc.path.startsWith('/documents/') ? doc.path.substring('/documents/'.length) : doc.path;
                     console.log('[DocumentList] Getting URL for file path:', filePath);
                     
-                    const url = supabase.storage.from('documents').getPublicUrl(filePath).data?.publicUrl;
-                    if (url) {
-                      console.log('[DocumentList] Opening URL:', url);
-                      window.open(url);
-                    } else {
-                      console.error('[DocumentList] Could not generate document URL');
-                      setError('Could not generate document URL');
-                      setTimeout(() => setError(null), 3000);
-                    }
-                  })
-                  .catch(err => {
+                    // Use the Supabase storage directly to get a signed URL
+                    supabase.storage
+                      .from('documents')
+                      .createSignedUrl(filePath, 3600) // 1 hour expiry
+                      .then((result: { data?: { signedUrl?: string } }) => {
+                        const url = result.data?.signedUrl;
+                        if (url) {
+                          console.log('[DocumentList] Opening URL:', url);
+                          window.open(url);
+                        } else {
+                          console.error('[DocumentList] Could not generate document URL');
+                          setError('Could not generate document URL');
+                          setTimeout(() => setError(null), 3000);
+                        }
+                      })
+                      .catch((err: Error) => {
+                        console.error('[DocumentList] Error generating signed URL:', err);
+                        setError('Error generating document URL');
+                        setTimeout(() => setError(null), 3000);
+                      });
+                  } catch (err) {
                     console.error('[DocumentList] Error viewing document:', err);
                     setError(err instanceof Error ? err.message : 'Error viewing document');
                     setTimeout(() => setError(null), 3000);
-                  });
+                  }
                 }}
                 className="text-[#0078D4] hover:text-[#0078D4]/80 p-2 rounded-full"
                 title="View document"
@@ -384,4 +583,4 @@ const DocumentList: React.FC = () => {
   );
 };
 
-export default DocumentList; 
+export default DocumentList;

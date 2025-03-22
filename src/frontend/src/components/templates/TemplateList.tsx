@@ -13,6 +13,10 @@ interface Template {
   id: string;
   name: string;
   description: string;
+  prompt?: string;
+  case_history?: string;
+  participants?: string;
+  objective?: string;
   created_at: string;
   updated_at: string;
 }
@@ -66,7 +70,10 @@ const TemplateList: React.FC<TemplateListProps> = ({ onTemplateSelect, refreshTr
 
   const filteredTemplates = templates.filter((template) =>
     template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (template.description?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+    (template.description?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (template.objective?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (template.case_history?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (template.participants?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
   if (loading) {

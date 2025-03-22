@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../../context/ThemeContext';
 import LoadingSpinner from '../common/LoadingSpinner';
 import Tooltip from '../common/Tooltip';
+import { templates } from '../../services/supabase';
 
-// Create a Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+
 
 interface AddTemplateFormProps {
   onTemplateAdded?: () => void;
@@ -16,6 +13,10 @@ interface AddTemplateFormProps {
 const AddTemplateForm: React.FC<AddTemplateFormProps> = ({ onTemplateAdded }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [caseHistory, setCaseHistory] = useState('');
+  const [participants, setParticipants] = useState('');
+  const [objective, setObjective] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,9 +36,14 @@ const AddTemplateForm: React.FC<AddTemplateFormProps> = ({ onTemplateAdded }) =>
     }
 
     try {
-      const { data, error: supabaseError } = await supabase
-        .from('templates')
-        .insert([{ name, description }]);
+      const { error: supabaseError } = await templates.createTemplate({ 
+        name, 
+        description, 
+        prompt,
+        case_history: caseHistory,
+        participants,
+        objective
+      });
 
       if (supabaseError) {
         if (supabaseError.code === '23505') {
@@ -49,6 +55,10 @@ const AddTemplateForm: React.FC<AddTemplateFormProps> = ({ onTemplateAdded }) =>
         setSuccess('Template added successfully!');
         setName('');
         setDescription('');
+        setPrompt('');
+        setCaseHistory('');
+        setParticipants('');
+        setObjective('');
         onTemplateAdded?.();
         setTimeout(() => setSuccess(null), 3000);
       }
@@ -114,6 +124,90 @@ const AddTemplateForm: React.FC<AddTemplateFormProps> = ({ onTemplateAdded }) =>
                      focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-transparent
                      placeholder-gray-400 dark:placeholder-gray-500"
             aria-label="Template description"
+          />
+        </div>
+
+        <div>
+          <label 
+            htmlFor="templatePrompt"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Prompt
+          </label>
+          <textarea
+            id="templatePrompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Enter a prompt that will guide the AI when using this template..."
+            rows={4}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
+                     bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-transparent
+                     placeholder-gray-400 dark:placeholder-gray-500"
+            aria-label="Template prompt"
+          />
+        </div>
+
+        <div>
+          <label 
+            htmlFor="templateCaseHistory"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Case History
+          </label>
+          <textarea
+            id="templateCaseHistory"
+            value={caseHistory}
+            onChange={(e) => setCaseHistory(e.target.value)}
+            placeholder="Enter the case history or background information..."
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
+                     bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-transparent
+                     placeholder-gray-400 dark:placeholder-gray-500"
+            aria-label="Case history"
+          />
+        </div>
+
+        <div>
+          <label 
+            htmlFor="templateParticipants"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Participants
+          </label>
+          <textarea
+            id="templateParticipants"
+            value={participants}
+            onChange={(e) => setParticipants(e.target.value)}
+            placeholder="Enter information about case participants..."
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
+                     bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-transparent
+                     placeholder-gray-400 dark:placeholder-gray-500"
+            aria-label="Case participants"
+          />
+        </div>
+
+        <div>
+          <label 
+            htmlFor="templateObjective"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Objective
+          </label>
+          <textarea
+            id="templateObjective"
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder="Enter the objective or purpose of this template..."
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
+                     bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-transparent
+                     placeholder-gray-400 dark:placeholder-gray-500"
+            aria-label="Template objective"
           />
         </div>
 

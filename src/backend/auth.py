@@ -2,22 +2,29 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 import jwt
-import redis
 from datetime import datetime
 from typing import Optional
 import os
+import logging
 
 from dotenv import load_dotenv
 
 load_dotenv()  # Load variables from .env
 
-# Initialize Supabase and Redis clients
+# Initialize Supabase client
 supabase_url = os.environ.get("SUPABASE_URL")
-supabase_key = os.environ.get("SUPABASE_KEY")
+supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")  # Use service role key
+
+if not supabase_url or not supabase_key:
+    logging.error("Missing Supabase credentials in environment variables")
+    raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables")
+
 supabase: Client = create_client(supabase_url, supabase_key)
 
-# Initialize Redis client with error handling
+# Make Redis optional
+redis_client = None
 try:
+    import redis
     redis_host = os.environ.get("REDIS_HOST", "localhost")
     redis_port = int(os.environ.get("REDIS_PORT", 6379))
     redis_db = int(os.environ.get("REDIS_DB", 0))
@@ -41,7 +48,7 @@ app = FastAPI()
 # Middleware to verify Supabase JWT
 async def verify_supabase_jwt(token: str) -> Optional[dict]:
     try:
-        # Check Redis cache first (TTL: 1 hour) if available
+        # Check Redis cache first (TTL: 1 hour) if Redis is available
         if redis_available:
             try:
                 cached_user = redis_client.get(f"user:{token}")

@@ -1,43 +1,106 @@
-# Windsurf Rules for Lexpert Case AI
+# Lexpert Case AI - Project Rules
 
-## Project Context
-- Purpose: A RAG chatbot for family law and trademark attorneys to draft legal documents and handle case-specific uploads.
-- Goals: 3-5s responses, 95% accuracy, CodeGuide-style UI (deep blue #0078D4, white cards, light gray #F5F6F7).
-- Spec: If `spec.md` exists in the root, use it as the primary guide for end-to-end feature implementation.
+## Project-Specific Configuration
 
-## Project Structure
-- `/src/frontend`: React frontend code.
-  - `/components`: Reusable UI components (e.g., Card, Button).
-  - `/pages`: Main page components.
-  - `/context`: React Context providers.
-- `/backend`: FastAPI backend code.
-- Run commands:
-  - Frontend: `cd src/frontend && npm run dev` (http://localhost:5173).
-  - Backend: `cd backend && uvicorn main:app --reload` (http://localhost:8000).
-  - Activate env: `conda activate lexpert_case_ai`.
+- **Frontend Port**: Default http://localhost:5173
+- **Backend Port**: Default http://localhost:8000
+- **Primary Color**: Deep blue (#0078D4) for headers and buttons
+- **Environment Variables**: Store in `.env` file in frontend directory with VITE\_ prefix
 
-## Coding Standards
-- Python: Use Pydantic for type hints in FastAPI, chunk docs into 500-token segments for RAG, keep files <300 lines.
-- React: Use Tailwind CSS, functional components, named exports (e.g., `export const MyComponent`).
-- UI: Deep blue (#0078D4) for buttons/headers, white cards, light gray (#F5F6F7) background.
-- Terminology: "Assistant" (not "Bot"), "Case" (legal matter), "Document" (file), "Chat" (interface), "Dashboard" (landing page), "Wizard" (assistant creation).
+## Current Priority Focus
 
-## Best Practices
-- Use Supabase for auth, storage (`documents` bucket), and VectorDB (pgvector).
-- Auto-tag uploads with spaCy (85%+ confidence, prompt if <85%).
-- Handle errors: Try-catch for Supabase ops, show user-friendly messages, no stubbing in dev/prod.
-- Optimize: Use HNSW/IVF indexing in Supabase VectorDB, aim for 3-5s responses.
-- Avoid duplication: Check existing code before adding similar logic; remove old implementations if replaced.
+- Debugging Documents page blank screen issue
+- Enhancing Templates feature with document connections
+- Implementing proper error handling for Supabase operations
+- Maintaining consistent loading states and user feedback
 
-## AI Behavior
-- Support agentic coding: With a spec or clear prompt, write full features (e.g., RAG pipeline, UI components).
-- Suggest legal citations (e.g., Texas §153.002) when drafting documents.
-- **At startup**: Check Cascade Memories for saved project context (e.g., Supabase setup, RAG details). If a `/memory` directory exists, read Markdown files there as additional context. Report: "Loaded memories and `/memory` files" or "No memories or `/memory` files found."
-- If context is missing: "I don’t have prior project context beyond memories or `/memory` files. I’ll use the current codebase and your input. Add details here or use Cascade Memories."
-- Use Cascade Memories for project context: Save key details (e.g., project structure, Supabase setup, legal terminology) when I say "save this to memory" or when critical (e.g., new RAG optimizations).
-- **Periodic updates**: Every 3-5 interactions or at session end, update Cascade Memories with significant project changes (e.g., new UI components, bug fixes). If `/memory` exists, suggest updating files there too: "Updated Cascade Memories; consider adding to `/memory` files."
-- Prioritize modular code for future agentic RAG enhancements.
+## Component Structure
 
-## Known Issues
-- Clickable elements may need server restarts—check event handlers in Card components.
-- Dark mode toggle: Ensure `dark` class on HTML root, verify Tailwind config.
+- Follow established component hierarchy pattern:
+  - Container components handle logic and state
+  - Presentational components focus on UI
+  - Error/loading states handled consistently across features
+
+## Supabase Integration
+
+- Direct storage uploads with proper bucket validation
+- Row Level Security policies for all tables
+- Admin-only write access for sensitive operations
+- Authentication through Supabase Auth
+- Specific error handling for Supabase operations
+
+## Code Preservation Guidelines
+
+- ALWAYS preserve existing functionality when adding new features
+- Before modifying ANY code, thoroughly analyze how it currently works
+- Make incremental changes that can be individually verified
+- Focus changes ONLY on the specific task requested
+- Maintain consistent patterns across the codebase
+- Do not modify function signatures or APIs without explicit approval
+- When fixing issues, use the smallest possible change to resolve the problem
+- Preserve existing error handling, loading states, and user feedback mechanisms
+- Test all existing functionality after making changes
+- If unsure about potential side effects, present a plan before implementing
+
+## Implementation Workflow
+
+- For any significant change, follow this process:
+  1. Analyze the existing code and identify all affected components
+  2. Present a plan outlining specific changes and potential risks
+  3. Wait for approval before implementing
+  4. Make changes incrementally, testing after each step
+  5. Verify both new and existing functionality works correctly
+  6. Summarize what was changed and any areas to monitor
+- ALWAYS kill any running server processes before starting new ones
+- Check for processes running on ports 5173 and 8000 before launch
+- Use appropriate commands to terminate processes (e.g., `lsof -i :5173` and `kill -9 PID`)
+
+## Project-Specific Commands
+
+- **Test Environment Variables**: Navigate to `/env-test` page
+- **Check Document Upload**: Monitor browser console during upload
+- **Test Supabase Connection**: Try direct API calls if components fail
+
+## Debugging Tools
+
+- Add `?debug=true` to URLs to enable enhanced console logging
+- Set `DEBUG_SUPABASE=true` in localStorage for Supabase operation logging
+- Use browser Storage tab to verify localStorage/sessionStorage values
+- Check Network tab for failed Supabase requests
+
+## When Debugging Issues
+
+- Focus only on the specific issue being fixed
+- Preserve unrelated functionality
+- Consider the full component lifecycle
+- Check for state management issues
+- Verify Supabase connections and error handling
+- Test across different browsers and viewport sizes
+- Monitor console for errors during operations
+
+## Component Style Guide
+
+- Tailwind dark mode with `dark:` prefix
+- Responsive designs with mobile-first approach
+- Consistent spacing with Tailwind's spacing scale
+- Proper loading states for all async operations
+- Error feedback with user-friendly messages
+
+## File Naming Conventions
+
+- React components: PascalCase.tsx
+- Utility functions: camelCase.ts
+- Context providers: XxxContext.tsx
+- Page components: PascalCase.tsx in pages directory
+
+## IDE Shortcuts Reference
+
+- Fix blank Documents page: Check Supabase connectivity and environment variables
+- Debug template connections: Verify template_documents junction table
+- Test document uploads: Monitor browser console during operations
+
+## Key Project Links
+
+- Project preview: http://localhost:5173
+- API documentation: http://localhost:8000/docs
+- Supabase dashboard: Check `.env` for URL

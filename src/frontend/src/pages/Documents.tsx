@@ -8,6 +8,8 @@ import { checkEnvironmentVariables } from '../utils/envCheck';
 import { debugSupabaseInit } from '../utils/supabaseDebug';
 import { debugAuthFlow, checkAdminStatus } from '../utils/authDebug';
 import { storage } from '../services/supabase';
+import TagSelector from '../components/tags/TagSelector';
+import tagService from '../services/tagService';
 
 // Debug flag - set to true to enable console logging
 const DEBUG = true;
@@ -50,30 +52,59 @@ try {
     storage: {
       from: () => ({
         upload: async () => ({ data: null, error: { message: 'Supabase client initialization failed' } }),
-        getPublicUrl: () => ({ data: { publicUrl: '' } })
+        createSignedUrl: async () => ({ data: { signedUrl: '' }, error: null })
       })
     }
   };
 }
 
-// Utility function to fetch documents by tag
-const fetchDocumentsByTag = async (tag: string) => {
-  debugLog(`Fetching documents with tag: ${tag}`);
+// Utility function to fetch documents by tags
+const fetchDocumentsByTags = async (tagIds: string[]) => {
+  debugLog(`Fetching documents with tags: ${tagIds.join(', ')}`);
   try {
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('metadata->tag', tag);
-    
-    if (error) {
-      console.error('Error fetching documents by tag:', error);
-      throw error;
+    if (tagIds.length === 0) {
+      // If no tags selected, fetch all documents
+      const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching all documents:', error);
+        throw error;
+      }
+      
+      debugLog(`Found ${data?.length || 0} documents (no tag filter)`);
+      return data || [];
     }
     
-    debugLog(`Found ${data?.length || 0} documents with tag: ${tag}`);
-    return data || [];
+    // Fetch documents that have any of the selected tags
+    const documents = [];
+    
+    for (const tagId of tagIds) {
+      try {
+        const docsWithTag = await tagService.getDocumentsWithTag(tagId);
+        documents.push(...docsWithTag);
+      } catch (err) {
+        console.error(`Error fetching documents with tag ${tagId}:`, err);
+      }
+    }
+    
+    // Remove duplicates (a document might have multiple selected tags)
+    const uniqueDocIds = new Set();
+    const uniqueDocs = [];
+    
+    for (const doc of documents) {
+      if (!uniqueDocIds.has(doc.id)) {
+        uniqueDocIds.add(doc.id);
+        uniqueDocs.push(doc);
+      }
+    }
+    
+    debugLog(`Found ${uniqueDocs.length} unique documents with selected tags`);
+    return uniqueDocs;
   } catch (err) {
-    console.error('Error fetching documents by tag:', err);
+    console.error('Error fetching documents by tags:', err);
     return [];
   }
 };
@@ -89,6 +120,7 @@ const Documents = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
@@ -97,17 +129,37 @@ const Documents = () => {
   const refreshDocuments = async () => {
     debugLog('Refreshing all documents');
     try {
-      // Fetch documents with tag 'pleading' (or any other tag you're using)
-      const docs = await fetchDocumentsByTag('pleading');
+      // Fetch documents with selected tags
+      const docs = await fetchDocumentsByTags(selectedTagIds);
       setTaggedDocuments(docs || []);
       
-      debugLog(`Refreshed documents: found ${docs.length} pleading documents`);
+      debugLog(`Refreshed documents: found ${docs.length} documents with selected tags`);
       return true;
     } catch (err) {
       console.error('Error refreshing documents:', err);
       return false;
     }
   };
+  
+  // Handle tag selection changes
+  const handleTagSelectionChange = async (selectedTags: string[]) => {
+    debugLog(`Tag selection changed: ${selectedTags.join(', ')}`);
+    setSelectedTagIds(selectedTags);
+    setLoading(true);
+    
+    try {
+      const docs = await fetchDocumentsByTags(selectedTags);
+      setTaggedDocuments(docs || []);
+      debugLog(`Filtered to ${docs.length} documents with selected tags`);
+    } catch (err) {
+      console.error('Error filtering documents by tags:', err);
+      setUploadError('Failed to filter documents by tags. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // We don't need to fetch tags here as the TagSelector component handles that internally
 
   // Enhanced logging for component mounting
   useEffect(() => {
@@ -146,8 +198,8 @@ const Documents = () => {
         const authResult = await debugAuthFlow();
         console.log("[Documents] Auth flow debug result:", authResult);
         
-        if (!authResult.success) {
-          setAuthError(`Authentication error: ${authResult.message}`);
+        if (!authResult.success || !authResult.isAuthenticated) {
+          setAuthError(`Please log in to view documents`);
           setLoading(false);
           return;
         }
@@ -165,72 +217,174 @@ const Documents = () => {
         
         setIsAdmin(adminResult.success && adminResult.isAdmin === true);
         
-        // Check if documents storage bucket exists
+        // Check if documents storage bucket exists and set up necessary tables
         console.log("[Documents] Checking if documents storage bucket exists");
         try {
-          // Use our backend API to check if the bucket exists (using service role key)
           const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-          const response = await fetch(`${apiUrl}/api/check-bucket-exists`, {
+          
+          // Step 1: Check if the documents bucket exists
+          console.log(`[Documents] Checking bucket existence via backend API: ${apiUrl}/api/check-bucket-exists`);
+          const checkResponse = await fetch(`${apiUrl}/api/check-bucket-exists`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ bucketName: 'documents' })
+            body: JSON.stringify({ bucketName: 'documents' }),
           });
           
-          const result = await response.json();
+          if (!checkResponse.ok) {
+            console.warn(`[Documents] API returned status ${checkResponse.status}, falling back to direct check`);
+            // Fallback to direct check if API fails
+            await checkBucketDirectly();
+            return;
+          }
           
-          if (result.error) {
-            console.error("[Documents] Error checking bucket:", result.error);
-            setUploadError("Error checking storage buckets: " + result.error);
-          } else if (!result.exists) {
-            console.log("[Documents] Documents bucket does not exist, attempting to create it");
+          const bucketData = await checkResponse.json();
+          
+          // Step 2: If bucket doesn't exist, create it
+          if (!bucketData.exists) {
+            console.log("[Documents] Documents bucket does not exist, creating via API");
+            const createResponse = await fetch(`${apiUrl}/api/create-bucket`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ bucketName: 'documents' }),
+            });
             
-            try {
-              // Try to create the bucket using the backend API
-              const createResponse = await fetch(`${apiUrl}/api/create-bucket`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ bucketName: 'documents' })
-              });
-              
-              const createResult = await createResponse.json();
-              
-              if (createResult.error) {
-                console.error("[Documents] Error creating bucket:", createResult.error);
-                setUploadError("Warning: Documents storage bucket does not exist and could not be created automatically. Please contact an administrator to create it in the Supabase dashboard.");
-              } else {
-                console.log("[Documents] Bucket created successfully:", createResult);
-                setUploadSuccess("Documents storage bucket created successfully!");
-                setTimeout(() => setUploadSuccess(null), 3000);
-              }
-            } catch (err) {
-              console.error("[Documents] Error creating bucket:", err);
-              setUploadError("Warning: Documents storage bucket does not exist. Please contact an administrator to create it in the Supabase dashboard.");
+            if (!createResponse.ok) {
+              console.error(`[Documents] API returned status ${createResponse.status} when creating bucket`);
+              setUploadError("The document storage setup failed. Please contact an administrator.");
+              return;
+            }
+            
+            const createResult = await createResponse.json();
+            
+            if (createResult.exists) {
+              console.log("[Documents] Bucket created successfully via backend API");
+              setUploadSuccess("Documents storage setup completed successfully!");
+              setTimeout(() => setUploadSuccess(null), 3000);
+            } else {
+              console.error("[Documents] Error creating bucket via backend API:", createResult.error);
+              setUploadError("The document storage is being set up. Please try again in a few moments.");
+              return;
             }
           } else {
-            console.log("[Documents] Documents bucket exists");
+            console.log("[Documents] Documents bucket exists according to backend API");
             // Clear any existing error messages about the bucket
             if (uploadError && uploadError.includes("bucket does not exist")) {
               setUploadError(null);
             }
           }
+          
+          // Step 3: Set up RLS policies for the bucket
+          console.log(`[Documents] Setting up bucket policies via API: ${apiUrl}/api/setup-bucket-policies`);
+          const policiesResponse = await fetch(`${apiUrl}/api/setup-bucket-policies`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ bucketName: 'documents' }),
+          });
+          
+          if (!policiesResponse.ok) {
+            console.warn(`[Documents] API returned status ${policiesResponse.status} when setting up policies`);
+            // Not critical, so we continue
+          } else {
+            const policiesResult = await policiesResponse.json();
+            console.log("[Documents] Bucket policies setup result:", policiesResult);
+          }
+          
+          // Step 4: Create template_documents table if it doesn't exist
+          console.log(`[Documents] Creating template_documents table via API: ${apiUrl}/api/create-template-documents-table`);
+          const tableResponse = await fetch(`${apiUrl}/api/create-template-documents-table`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          });
+          
+          if (!tableResponse.ok) {
+            console.warn(`[Documents] API returned status ${tableResponse.status} when creating template_documents table`);
+            // Not critical for document viewing, so we continue
+          } else {
+            const tableResult = await tableResponse.json();
+            console.log("[Documents] Template documents table setup result:", tableResult);
+          }
+          
         } catch (err) {
-          console.error("[Documents] Error checking storage bucket:", err);
+          console.error("[Documents] Error setting up document storage:", err);
           setUploadError("Error checking storage configuration. Please try again later.");
+          // Fallback to direct check if API completely fails
+          await checkBucketDirectly();
         }
         
-        // Fetch documents if user is admin
-        if (adminResult.success && adminResult.isAdmin) {
-          console.log("[Documents] Fetching tagged documents");
+        // Fallback function to check bucket directly with Supabase
+        async function checkBucketDirectly() {
           try {
-            const docs = await fetchDocumentsByTag('pleading');
+            console.log("[Documents] Falling back to direct Supabase bucket check");
+            const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+            
+            if (listError) {
+              console.error("[Documents] Error listing buckets:", listError);
+              setUploadError(`Supabase connection issue: ${listError.message || 'Unknown error'}. Please try again later.`);
+              return;
+            }
+            
+            const bucketExists = buckets ? buckets.some((b: { name: string }) => b.name === 'documents') : false;
+            
+            if (!bucketExists) {
+              console.log("[Documents] Documents bucket does not exist, attempting to create it directly");
+              
+              try {
+                const { error: createError } = await supabase.storage.createBucket('documents', {
+                  public: true,
+                  fileSizeLimit: 10485760 // 10MB
+                });
+                
+                if (createError) {
+                  if (createError.message && createError.message.includes('already exists')) {
+                    console.log("[Documents] Bucket 'documents' already exists, proceeding");
+                    if (uploadError && uploadError.includes("bucket does not exist")) {
+                      setUploadError(null);
+                    }
+                  } else {
+                    console.error("[Documents] Error creating bucket:", createError);
+                    setUploadError("Warning: Documents storage bucket does not exist and could not be created automatically. Please contact an administrator.");
+                  }
+                } else {
+                  console.log("[Documents] Bucket created successfully directly");
+                  setUploadSuccess("Documents storage bucket created successfully!");
+                  setTimeout(() => setUploadSuccess(null), 3000);
+                }
+              } catch (err) {
+                console.error("[Documents] Error creating bucket:", err);
+                setUploadError("Warning: Documents storage bucket does not exist. Please contact an administrator.");
+              }
+            } else {
+              console.log("[Documents] Documents bucket exists");
+              if (uploadError && uploadError.includes("bucket does not exist")) {
+                setUploadError(null);
+              }
+            }
+          } catch (err) {
+            console.error("[Documents] Error in direct bucket check:", err);
+            setUploadError("Error checking storage configuration. Please try again later.");
+          }
+        }
+        
+        // Fetch documents and tags if user is admin
+        if (adminResult.success && adminResult.isAdmin) {
+          console.log("[Documents] Fetching documents and tags");
+          try {
+            // Fetch documents
+            const docs = await fetchDocumentsByTags(selectedTagIds);
             console.log("[Documents] Fetched documents:", docs.length);
             setTaggedDocuments(docs || []);
+            
+            // The TagSelector component will fetch tags internally
           } catch (err) {
-            console.error("[Documents] Error fetching tagged documents:", err);
+            console.error("[Documents] Error fetching data:", err);
           }
         }
         
@@ -272,10 +426,17 @@ const Documents = () => {
       
       debugLog('Upload successful:', data);
       
-      // Get the public URL of the uploaded file
-      const { data: urlData } = storage.getFileUrl('documents', filePath);
-      const publicUrl = urlData?.publicUrl || '';
-      debugLog('File URL:', publicUrl);
+      // Get the signed URL of the uploaded file
+      const { data: urlData, error: urlError } = await storage.getFileUrl('documents', filePath);
+      if (urlError) {
+        console.error('Error getting signed URL:', urlError);
+        setUploadError('Error generating file URL');
+        setIsUploading(false);
+        return;
+      }
+      
+      const signedUrl = urlData?.signedUrl || '';
+      debugLog('File URL:', signedUrl);
       
       // Insert record into the database
       debugLog('Inserting record into database');
@@ -342,14 +503,14 @@ const Documents = () => {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex justify-center items-center">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md max-w-md w-full">
-          <h2 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-4">Authentication Error</h2>
-          <p className="text-gray-700 dark:text-gray-300 mb-4">{authError}</p>
+          <h2 className="text-xl font-semibold text-[#0078D4] dark:text-[#0078D4] mb-4">Sign In Required</h2>
+          <p className="text-gray-700 dark:text-gray-300 mb-4">Please sign in to view and manage your documents.</p>
           <div className="flex space-x-4">
             <button
               onClick={() => navigate('/login')}
               className="bg-[#0078D4] text-white px-4 py-2 rounded-md hover:bg-[#0078D4]/90 flex-1"
             >
-              Go to Login
+              Sign In
             </button>
             <button
               onClick={() => window.location.reload()}
@@ -410,6 +571,19 @@ const Documents = () => {
           </button>
         </div>
 
+        {/* Tag Filter Section */}
+        <div className={`bg-white dark:bg-gray-800 rounded-lg p-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} border mb-8`}>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Filter Documents by Tags</h2>
+          <div className="mb-4">
+            <TagSelector 
+              selectedTags={selectedTagIds} 
+              onChange={handleTagSelectionChange} 
+              entityType="document"
+              className="w-full"
+            />
+          </div>
+        </div>
+        
         {/* Dedicated Upload Document Section */}
         <div className={`bg-white dark:bg-gray-800 rounded-lg p-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} border mb-8`}>
           <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Upload Document</h2>
