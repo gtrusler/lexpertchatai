@@ -4,6 +4,16 @@
 
 Lexpert Case AI is a Retrieval-Augmented Generation (RAG) chatbot designed specifically for attorneys. The system enables legal professionals to efficiently draft legal documents, cite relevant laws, and handle case-specific document uploads.
 
+## Implementation Philosophy
+
+Lexpert Case AI is designed to use real AI services rather than simulations or mock data. The application integrates directly with OpenAI's API for:
+
+- Chat completions (using GPT-4o model)
+- Document embeddings (using text-embedding-3-small model)
+- RAG contexts and information retrieval
+
+**Important**: We do not use mock data or hardcoded responses. All AI interactions must use the real OpenAI API unless explicitly approved for testing purposes only.
+
 ## Requirements
 
 ### Performance Targets
@@ -24,21 +34,54 @@ Lexpert Case AI is a Retrieval-Augmented Generation (RAG) chatbot designed speci
 2. Handle chaotic, shorthand prompts through intelligent auto-tagging and prompt coaching
 3. Ensure scalability for 100+ cases, 1GB+ documents, and marketability to Austin lawyers
 4. Future-proof for agentic RAG and cross-domain use (family law, trademarks)
+5. Use real AI services throughout - no mock data or hardcoded responses
 
 ## Development Phases
 
-1. **Prototype (Week 1):** Implement basic RAG with Supabase VectorDB, create Streamlit chat UI
-2. **Core Features (Weeks 2-3):** Design wizard, enhance prompt coach, refine sourcing
-3. **Polish and Scale (Weeks 4-6):** Optimize for performance, redesign UI in React/Tailwind, market to Austin lawyers
+1. **Core Infrastructure (Completed)**
+
+   - Implemented basic RAG with Supabase VectorDB
+   - Set up React/Tailwind frontend with dark mode
+   - Established modular backend structure
+   - Configured Supabase storage and authentication
+
+2. **Document Management (Completed)**
+
+   - Implemented document upload and storage
+   - Added automatic document processing
+   - Created document search and retrieval
+   - Enhanced error handling and user feedback
+
+3. **Templates System (In Progress)**
+
+   - Created templates table with enhanced metadata
+   - Implemented template-document connections
+   - Added role-based access control
+   - Enhanced search and filtering capabilities
+
+4. **Chat Interface (In Progress)**
+
+   - Implemented real-time chat with AI
+   - Added document citation support
+   - Enhanced context-aware responses
+   - Improved error handling and feedback
+
+5. **Polish and Optimization (Planned)**
+   - Performance optimization for large document sets
+   - Enhanced error recovery mechanisms
+   - Improved user experience and accessibility
+   - Cross-browser testing and compatibility
 
 ## Key Features
 
 ### Document Management
+
 - Upload and manage legal documents
 - Automatic document processing and embedding
 - Document search and retrieval
 
 ### Templates System
+
 - Create and manage document templates with enhanced metadata:
   - Case history background information
   - Participant details
@@ -49,11 +92,13 @@ Lexpert Case AI is a Retrieval-Augmented Generation (RAG) chatbot designed speci
 - Search and filtering capabilities across all template fields
 
 ### Chat Interface
+
 - Real-time chat with AI assistants
 - Document citation and reference
 - Context-aware responses
 
 ### User Management
+
 - Role-based access control
 - User profiles and preferences
 - Authentication via Supabase Auth

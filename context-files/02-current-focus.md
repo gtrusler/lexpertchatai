@@ -2,13 +2,24 @@
 
 ## Current Work Focus
 
-The current development focus is on implementing and enhancing the Templates feature, along with ongoing UI improvements and bug fixes. Recent work has focused on fixing template-document connections and improving error handling throughout the application.
+The current development focus is on implementing and enhancing the Templates feature, along with ongoing UI improvements and bug fixes. Recent work has focused on fixing template-document connections, improving error handling throughout the application, and ensuring live AI integration rather than mock responses.
 
 ## Active Tasks
+
+### Live AI Integration (Updated 3/24/2025)
+
+- **Real OpenAI Integration**:
+  - Removed mock hardcoded responses in chat service
+  - Implemented proper OpenAI API integration
+  - Ensuring all AI responses come from actual OpenAI models
+  - Using environment variables for API key management
+  - Improved error handling for API calls
+  - Added system context based on selected bot
 
 ### Templates Feature Enhancement
 
 - **Template-Document Connections (Updated 3/21/2025)**:
+
   - Created a `template_documents` junction table with:
     - `template_id`: UUID (references templates.id with CASCADE delete)
     - `document_id`: UUID
@@ -32,6 +43,7 @@ The current development focus is on implementing and enhancing the Templates fea
 ### Document Upload Functionality
 
 - **Fixed Issues (3/18/2025)**:
+
   - Enhanced storage service with comprehensive error handling
   - Implemented automatic bucket creation and validation
   - Added proper error detection for "bucket already exists" scenarios
@@ -62,7 +74,35 @@ The current development focus is on implementing and enhancing the Templates fea
 
 ## Recent Changes
 
-### 1. Extended Templates Table Schema (3/21/2025)
+### 1. Implemented Live AI Integration (3/24/2025)
+
+- Replaced mock chat service with real OpenAI integration:
+  - Created dedicated ai_service.py to handle OpenAI API calls
+  - Updated chat routes to use the real AI service
+  - Added proper error handling for API failures
+  - Enhanced system prompts based on bot context
+  - Ensured OpenAI API key is properly configured in environment
+  - No more hardcoded mock responses - all responses now come from actual AI models
+
+### 2. Improved Testing Framework (3/28/2025)
+
+- Fixed environmental variable handling in tests to work consistently:
+  - Created a flexible env.ts module that works in both Jest and Vite environments
+  - Properly handled the import.meta.env case for Vite and process.env for Jest
+- Enhanced DocumentProcessingService tests:
+  - Implemented complete mocks to avoid actual API calls
+  - Used hard-coded values instead of trying to read from File objects
+  - Fixed issues with file.text() and file.arrayBuffer() methods
+  - Added performance testing for document processing operations
+- Updated Jest configuration:
+  - Configured ts-jest properly to handle TypeScript and ESM imports
+  - Removed deprecated globals configuration
+  - Added esModuleInterop flag to TypeScript configuration
+  - Enhanced test coverage settings
+- Fixed all test failures and warnings
+
+### 3. Extended Templates Table Schema (3/21/2025)
+
 - Added additional fields to templates table:
   - `case_history` field to store case background information
   - `participants` field to store information about case participants
@@ -73,19 +113,22 @@ The current development focus is on implementing and enhancing the Templates fea
   - Enhanced `TemplateList` component to include new fields in search functionality
 - Updated context files to reflect schema changes
 
-### 2. Enhanced Templates with Document Connections (3/20/2025)
+### 4. Enhanced Templates with Document Connections (3/20/2025)
+
 - Added `prompt` field to templates table
 - Created template_documents junction table
 - Updated frontend components for document selection
 - Enhanced form validation and user feedback
 
-### 3. Fixed Document Upload Functionality (3/18/2025)
+### 5. Fixed Document Upload Functionality (3/18/2025)
+
 - Enhanced storage service with comprehensive error handling
 - Implemented automatic bucket creation and validation
 - Added proper error detection for bucket operations
 - Improved file upload options with caching and upsert capabilities
 
-### 4. Fixed Template Document Connections (3/21/2025)
+### 6. Fixed Template Document Connections (3/21/2025)
+
 - Fixed "Unknown error" when updating templates with document connections
 - Enhanced error handling in Supabase service for template document operations
 - Improved error messages to provide clear feedback about missing tables
@@ -93,7 +136,8 @@ The current development focus is on implementing and enhancing the Templates fea
 - Created migration script for template_documents table
 - Implemented graceful fallback to preserve template updates even when document connections fail
 
-### 5. Backend Refactoring (3/19/2025)
+### 7. Backend Refactoring (3/19/2025)
+
 - Created modular structure with separate modules
 - Enhanced error handling and response consistency
 - Added proper documentation for each endpoint
@@ -101,6 +145,7 @@ The current development focus is on implementing and enhancing the Templates fea
 
 ## Testing Status
 
+✅ Chat page using real OpenAI integration  
 ✅ Chat page file uploads working  
 ✅ Documents page file uploads working  
 ✅ Proper error handling and feedback  
@@ -108,7 +153,12 @@ The current development focus is on implementing and enhancing the Templates fea
 ✅ Backend server starts successfully  
 ✅ API endpoints accessible  
 ✅ Template document connections working  
-❌ Documents page blank screen issue (in progress)  
+✅ Frontend unit tests passing  
+❌ Documents page blank screen issue (in progress)
+
+## Important Note on Mock Data
+
+Per project requirements, we will avoid using mock data whenever possible. Real services and APIs should be used for all features. If mock data is absolutely necessary for any reason (e.g., testing without API access), this must be explicitly approved before implementation.
 
 ## Project-Specific Commands
 
@@ -116,3 +166,24 @@ The current development focus is on implementing and enhancing the Templates fea
 - **Check Document Upload**: Monitor browser console during upload
 - **Test Supabase Connection**: Try direct API calls if components fail
 - **Debug Options**: Add `?debug=true` to URLs to enable enhanced console logging
+
+## Application Running Instructions
+
+Always remember the correct workflow to run the application:
+
+1. Start the frontend in one terminal:
+
+   ```bash
+   conda activate lexpert_case_ai
+   cd src/frontend
+   npm run dev
+   ```
+
+2. Start the backend in a separate terminal:
+   ```bash
+   conda activate lexpert_case_ai
+   cd backend
+   uvicorn main:app --reload
+   ```
+
+**Important**: The conda environment must be activated before running any commands. If you encounter issues with missing dependencies, ensure the environment is correctly activated.
