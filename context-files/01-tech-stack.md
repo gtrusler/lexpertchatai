@@ -1,216 +1,296 @@
-# Lexpert Case AI - Technical Stack
+# Lexpert Case AI - Technical Stack and Architecture
 
-## AI Integration
+This document outlines the key technical decisions and architectural approach for the Lexpert Case AI project.
 
-- **Primary AI Provider**: OpenAI
-- **Models Used**:
-  - GPT-4o for chat responses
-  - text-embedding-3-small for document embeddings
-- **API Integration**: Direct integration via OpenAI Python client
-- **Bot Context**: System prompts customized based on bot type/ID
-- **No Mock Data**: Using actual API calls for all AI operations, no hardcoded mock responses
+## Core Architecture
 
-## Frontend Stack
+The application follows a modern client-server architecture with:
 
-- **Framework**: React.js with TypeScript
-- **Styling**: Tailwind CSS with dark mode support
-- **Routing**: React Router v6
-- **State Management**: React Context API
-- **Build Tool**: Vite
-- **Package Manager**: npm
-- **File Upload**: Native File API with Supabase Storage
-- **UI Components**: Custom components with dark mode support
-- **Primary Color**: Deep blue (#0078D4) for headers and buttons
-
-## Backend Stack
-
-- **Framework**: FastAPI
-- **Language**: Python 3.10+
-- **AI Integration**:
-  - OpenAI Python client
-  - Direct API calls with proper error handling
-  - System context based on bot selection
-- **Architecture**: Modular structure with dedicated modules for:
-  - API routes (`/app/api/routes/`)
-  - Services (`/app/services/`)
-    - `ai_service.py` - Real OpenAI integration
-    - `storage_service.py` - Supabase storage operations
-  - Models (`/app/models/`)
-  - Core utilities (`/app/core/`)
-  - Error handling (`/app/core/errors/`)
-  - Middleware (`/app/middleware/`)
-  - Configuration (`/app/config/`)
-- **Environment Management**: Conda
-- **API Documentation**: Swagger UI (auto-generated)
-- **Port**: Default http://localhost:8000
-- **Error Handling**: Centralized error handling with custom exceptions
-- **Logging**: Structured logging with different levels for development/production
-- **Testing**: Pytest with async support for API testing
-
-## Database & Storage
-
-- **Database**: Supabase (PostgreSQL)
+- **Frontend**: React SPA with TypeScript
+- **Backend**: FastAPI Python server
+- **Database**: PostgreSQL via Supabase
 - **Storage**: Supabase Storage
 - **Authentication**: Supabase Auth
-- **Vector Store**: pgvector for embeddings
-- **Access Control**: Row Level Security (RLS)
-- **Primary bucket**: `documents` - Used for all document storage
-- **File path format**: `{botId || 'general'}/{timestamp}_{filename}`
+- **AI Integration**: OpenAI API
 
-## Supabase Schema
+## Frontend Architecture
 
-### Templates Table
+### Framework and Core Libraries
 
-- `id`: UUID (primary key, default gen_random_uuid())
-- `name`: TEXT (not null, unique)
-- `description`: TEXT
-- `content`: TEXT
-- `prompt`: TEXT
-- `case_history`: TEXT
-- `participants`: TEXT
-- `objective`: TEXT
-- `created_at`: TIMESTAMP WITH TIME ZONE (default now())
-- `updated_at`: TIMESTAMP WITH TIME ZONE (default now(), updated via trigger)
+- **React** (18.x) - Core UI library
+- **TypeScript** (5.x) - Static typing
+- **Vite** - Build tool and development server
+- **Tailwind CSS** - Utility-first CSS framework
+- **React Router** (6.x) - Client-side routing
+- **Supabase JS Client** - Database and auth integration
+- **React Query** - Data fetching and caching
 
-### Template-Document Connections
+### Key Architectural Decisions
 
-- `template_documents` junction table with:
-  - `template_id`: UUID (references templates.id with CASCADE delete)
-  - `document_id`: UUID
-  - `created_at`: TIMESTAMP WITH TIME ZONE (default now())
-  - Primary key on (template_id, document_id)
+1. **Component Structure**:
+
+   - Container components for state and logic
+   - Presentational components for UI rendering
+   - Custom hooks for reusable logic
+   - Context providers for global state
+
+2. **Routing Strategy**:
+
+   - Public routes for landing and authentication
+   - Protected routes for authenticated content
+   - Lazy loading for performance optimization
+
+3. **State Management**:
+
+   - React Query for server state
+   - Context API for global UI state
+   - Local component state for component-specific UI
+
+4. **Styling Approach**:
+
+   - Tailwind CSS for utility-first styling
+   - Custom component libraries built on Tailwind
+   - Dark mode support with `dark:` variants
+   - Responsive design with mobile-first approach
+
+5. **Form Handling**:
+
+   - Form validation with schema validation
+   - Controlled components for form inputs
+   - Custom form hooks for reusable logic
+
+6. **Error Handling**:
+
+   - Centralized error boundary at app root
+   - Component-level error states
+   - Toast notifications for user feedback
+   - Consistent error logging to console
+
+7. **ID Handling Strategy**:
+   - UUIDs used for all database records
+   - Special handling for bot IDs (numeric) vs chat IDs (UUIDs)
+   - Deterministic UUID generation for numeric bot IDs: `00000000-0000-0000-0000-{padded_bot_id}`
+   - Components consistently check ID format and apply appropriate logic
+
+## Backend Architecture
+
+### Framework and Core Libraries
+
+- **FastAPI** - Modern, high-performance web framework
+- **Pydantic** - Data validation and settings management
+- **SQLAlchemy** - SQL toolkit and ORM
+- **Alembic** - Database migrations
+- **Uvicorn** - ASGI server
+- **Python-Jose** - JWT token handling
+- **OpenAI Python** - AI model integration
+
+### Key Architectural Decisions
+
+1. **API Structure**:
+
+   - RESTful API design
+   - Versioned endpoints
+   - Swagger/OpenAPI documentation
+   - JWT authentication
+
+2. **Service Layer**:
+
+   - Separation of concerns with clear boundaries
+   - Business logic isolated in service classes
+   - Database operations abstracted in repositories
+   - AI integration through dedicated services
+
+3. **Error Handling**:
+
+   - Standardized error responses
+   - Detailed error logging
+   - Custom exception handlers
+   - Graceful degradation strategies
+
+4. **Authentication Flow**:
+
+   - JWT tokens for session management
+   - Role-based access control
+   - Secure password hashing
+   - Token refresh mechanism
+
+5. **Performance Optimization**:
+   - Async/await for non-blocking I/O
+   - Connection pooling for database
+   - Response caching where appropriate
+   - Background tasks for heavy operations
+
+## Database Architecture
+
+### Structure and Technology
+
+- **PostgreSQL** - Relational database
+- **Supabase** - Postgres with RESTful and realtime APIs
+- **Row Level Security** - For data protection and multi-tenancy
+- **PostgREST** - RESTful API automatically generated from schema
+- **Real-time subscriptions** - For live updates
+
+### Key Tables
+
+- **users** - User accounts (managed by Supabase Auth)
+- **chats** - Chat sessions with UUID IDs
+- **documents** - Uploaded files and text content
+- **templates** - Document templates
+- **template_documents** - Junction table for template-document relationships
+- **document_tags** - Tags for documents
+- **tag_hierarchy** - Hierarchical organization of tags
+
+### Security Approach
+
+- **Row Level Security Policies**:
+
+  - Table-level policies controlling CRUD operations
+  - Policy-based access control for multi-tenant data
+  - Specific RLS policies for documents and chats tables
+  - Authentication required for all data operations
+
+- **Authentication Integration**:
+  - Supabase Auth for user management
+  - JWT tokens for session control
+  - Secure password reset flows
+  - Social login options
+
+## Storage Architecture
+
+- **Supabase Storage** - Object storage for files
+- **Bucket Structure**:
+  - `documents` - User-uploaded documents
+  - `templates` - Template-related files
+  - `profile` - User profile images and files
+- **Access Control**:
+  - Bucket-level permissions
+  - File-level metadata
+  - Signed URLs for secure access
+
+## CI/CD Architecture
+
+- **GitHub Actions** - Automated testing, building, and deployment
+- **Workflows**:
+  - PR checks for code quality
+  - Automated tests on PR and main branch commits
+  - Build and deployment to staging on PR merge
+  - Production deployment through manual approval
+
+## Monitoring and Logging
+
+- **Application Logging**:
+
+  - Structured logging with levels
+  - Request/response logging
+  - Error tracking
+  - Performance metrics
+
+- **Monitoring Strategy**:
+  - API endpoint health checks
+  - Performance monitoring
+  - Error rate alerting
+  - User activity dashboards
+
+## Testing Strategy
+
+- **Frontend**:
+
+  - Jest for unit testing
+  - React Testing Library for component tests
+  - Cypress for E2E tests
+  - Storybook for component documentation
+
+- **Backend**:
+  - Pytest for unit and integration tests
+  - Test database fixtures
+  - Mocked external services
+  - API contract testing
+
+## Security Considerations
+
+- **Data Protection**:
+
+  - End-to-end encryption for sensitive data
+  - Secure password storage (bcrypt)
+  - Content security policies
+  - Regular security audits
+
+- **API Security**:
+  - Rate limiting
+  - CORS configuration
+  - Input validation and sanitization
+  - API key rotation
+
+## Performance Optimization
+
+- **Frontend**:
+
+  - Code splitting and lazy loading
+  - Image optimization
+  - Bundle size analysis and optimization
+  - Cache strategies (SWR/React Query)
+
+- **Backend**:
+  - Database query optimization
+  - Connection pooling
+  - Caching layers
+  - Async processing for heavy tasks
+
+## Integration Points
+
+- **OpenAI API**:
+
+  - Model: GPT-4
+  - Usage: Chat responses, document analysis
+  - Integration via official Python SDK
+  - Prompt engineering and context management
+
+- **Supabase Services**:
+  - Database: PostgreSQL storage
+  - Auth: User management and authentication
+  - Storage: File storage and management
+  - Realtime: Live updates via subscriptions
+
+## Deployment Architecture
+
+- **Frontend**:
+
+  - Static hosting on Vercel/Netlify
+  - CDN for global distribution
+  - Environment-specific builds
+  - Feature flags for incremental rollout
+
+- **Backend**:
+  - Containerized deployment with Docker
+  - Kubernetes for orchestration
+  - Autoscaling based on load
+  - Blue/green deployments for zero downtime
 
 ## Environment Configuration
 
-### Environment Files
+- **Development**: Local environment with hot reloading
+- **Testing**: Isolated environment for automated tests
+- **Staging**: Pre-production for QA and validation
+- **Production**: Live environment with scaled resources
 
-1. `/backend/.env` - Main backend environment file
+## Documentation Strategy
 
-   - Contains: SUPABASE_URL, SUPABASE_SERVICE_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, REDIS_URL
-   - Used by: The FastAPI backend server
-   - **Critical**: OPENAI_API_KEY must be properly set for AI functionality
+- **Code Documentation**:
 
-2. `/.env` - Root environment file
+  - JSDoc for JavaScript/TypeScript
+  - Python docstrings
+  - Clear function and variable naming
+  - Comments for complex logic
 
-   - Contains: VITE_SUPABASE_URL, VITE_SUPABASE_KEY (anon key), ANTHROPIC_API_KEY, OPENAI_API_KEY, REDIS_URL
-   - Used by: Root level scripts and potentially as fallback
+- **API Documentation**:
 
-3. `/src/frontend/.env` - Frontend environment file
-   - Contains: VITE_SUPABASE_URL, VITE_SUPABASE_KEY (anon key)
-   - Used by: The React frontend application
+  - OpenAPI/Swagger for endpoint documentation
+  - Example requests and responses
+  - Authentication documentation
+  - Rate limit information
 
-### Key Usage Notes
-
-- Frontend files should use the anon key (VITE_SUPABASE_KEY)
-- Backend files should use the service_role key (SUPABASE_SERVICE_KEY)
-- Environment variables are accessed in frontend code using import.meta.env
-- Environment variables are accessed in backend code using os.getenv()
-- OpenAI API key must be properly configured for AI functionality
-
-## Storage Implementation
-
-### Best Practices
-
-1. **Client-Side Storage Operations**:
-
-   - Use the storage service from `src/frontend/src/services/supabase.ts`
-   - Always check bucket existence before upload
-   - Handle bucket creation errors gracefully
-   - Use upsert option to prevent duplicates
-
-2. **Error Handling**:
-
-   - Check for "already exists" in error messages for buckets
-   - Provide user-friendly error messages
-   - Log detailed errors to console for debugging
-   - Implement proper StorageError type handling
-
-3. **File Naming and Organization**:
-   - Use timestamps in filenames to ensure uniqueness
-   - Group files by botId or use 'general' as default
-   - Replace spaces with underscores in filenames
-   - Use consistent path format across the application
-
-## Component Structure
-
-- Follow established component hierarchy pattern:
-  - Container components handle logic and state
-  - Presentational components focus on UI
-  - Error/loading states handled consistently across features
-
-## File Naming Conventions
-
-- React components: PascalCase.tsx
-- Utility functions: camelCase.ts
-- Context providers: XxxContext.tsx
-- Page components: PascalCase.tsx in pages directory
-
-## Testing Framework
-
-### Frontend Testing
-
-- **Framework**: Jest with ts-jest
-- **Testing Library**: Testing Library for React
-- **Configuration**:
-  - ESM module support with `esModuleInterop`
-  - Environment setup in `src/test/setup.ts`
-  - File type mocks for CSS, images, and other assets
-  - Properly configured transformIgnorePatterns for node_modules
-- **Mock Setup**:
-  - TextEncoder/TextDecoder mocks for jsdom
-  - FileReader mock for file upload testing
-  - Environment variable mocking in test environment
-  - Fetch API mocking
-  - **Note**: Mock data should only be used in tests, not in production code
-- **Best Practices**:
-  - Use singleton pattern for service mocks
-  - Hard-code test responses instead of trying to read File objects
-  - Mock DocumentProcessingService behavior consistently
-  - Include performance testing for critical operations
-  - Test both unit functionality and integration flows
-
-### Backend Testing
-
-- **Framework**: Pytest with async support
-- **Mock Support**: pytest-mock for external dependencies
-- **Coverage**: pytest-cov for code coverage reporting
-- **API Testing**: TestClient from FastAPI for endpoint testing
-
-## Project Structure and Running the Application
-
-### Project Structure
-
-- The main frontend code is located in `src/frontend/`, not in the root `src/` directory
-- The backend is located in the root `backend/` directory
-- The project uses Conda for environment management
-
-### Running the Application
-
-1. Start the frontend:
-
-   ```bash
-   # Activate conda environment first
-   conda activate lexpert_case_ai
-
-   # Navigate to the frontend directory and start the server
-   cd src/frontend
-   npm run dev
-   ```
-
-2. Start the backend (in a separate terminal):
-
-   ```bash
-   # Activate conda environment first (in a new terminal window)
-   conda activate lexpert_case_ai
-
-   # Navigate to the backend directory and start the server
-   cd backend
-   uvicorn main:app --reload
-   ```
-
-### Important Notes
-
-- **Always activate the conda environment** (`conda activate lexpert_case_ai`) in each new terminal window before running any commands
-- Frontend server runs on port 5173 by default (http://localhost:5173)
-- Backend server runs on port 8000 by default (http://localhost:8000)
-- API documentation is available at http://localhost:8000/docs when the backend is running
+- **User Documentation**:
+  - User guides
+  - FAQ section
+  - Video tutorials
+  - Contextual help

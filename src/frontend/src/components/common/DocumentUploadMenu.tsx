@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { PlusIcon, DocumentArrowUpIcon, DocumentTextIcon, FolderIcon } from '@heroicons/react/24/outline';
-import { useNavigate } from 'react-router-dom';
+import { PlusIcon, DocumentArrowUpIcon, DocumentTextIcon, FolderIcon, DocumentIcon } from '@heroicons/react/24/outline';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import TextContentModal from './TextContentModal';
+import { createTag, addTagToDocument } from '../../services/tagService';
 
 interface DocumentUploadMenuProps {
   onUploadComplete?: () => void;
+  chatId?: string;
 }
 
 interface UploadStatus {
@@ -19,13 +21,14 @@ interface UploadProgress {
   total: number;
 }
 
-const DocumentUploadMenu: React.FC<DocumentUploadMenuProps> = ({ onUploadComplete }) => {
+const DocumentUploadMenu: React.FC<DocumentUploadMenuProps> = ({ onUploadComplete, chatId }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showTextModal, setShowTextModal] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { botId } = useParams<{ botId: string }>();
   
   // Close menu when clicking outside
   useEffect(() => {
@@ -72,6 +75,45 @@ const DocumentUploadMenu: React.FC<DocumentUploadMenuProps> = ({ onUploadComplet
           fileName: file.name
         });
 
+        if (!chatId && !botId) {
+          throw new Error('No chat ID available');
+        }
+
+        // Get the current chat name - handle both bot and chat IDs
+        let chatName = '';
+        let effectiveId = chatId || botId;
+
+        if (!effectiveId) {
+          throw new Error('No valid ID available');
+        }
+
+        // Check if the ID is numeric (bot ID) or UUID (chat ID)
+        const isNumericId = /^\d+$/.test(effectiveId);
+
+        if (!isNumericId) {
+          // If we have a UUID, use the chats table
+          const { data: chatData, error: chatError } = await supabase
+            .from('chats')
+            .select('name')
+            .eq('id', effectiveId)
+            .single();
+
+          if (chatError) {
+            throw new Error(`Failed to get chat information: ${chatError.message}`);
+          }
+          chatName = chatData.name;
+        } else {
+          // For numeric bot IDs, use hardcoded names
+          chatName = effectiveId === '1' ? 'Weyl Bot' :
+                     effectiveId === '2' ? 'Trademark Bot' :
+                     effectiveId === '3' ? 'Holly vs. Waytt' :
+                     'Unknown Bot';
+
+          // For numeric bot IDs, we need to create a UUID for the document
+          // We'll use a deterministic UUID based on the bot ID
+          effectiveId = `00000000-0000-0000-0000-${effectiveId.padStart(12, '0')}`;
+        }
+
         // Generate a clean filename
         const cleanName = file.name.toLowerCase().replace(/[^a-z0-9.]/g, '_');
         const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3);
@@ -95,8 +137,12 @@ const DocumentUploadMenu: React.FC<DocumentUploadMenuProps> = ({ onUploadComplet
 
         console.log('File uploaded successfully:', uploadData);
 
+        // Create chat tag using the appropriate ID
+        const tagName = `chat:${effectiveId}:${chatName}`;
+        const tag = await createTag({ name: tagName });
+
         // Create document record in the database
-        const { data: docData, error: docError } = await supabase
+        let { data: docData, error: docError } = await supabase
           .from('documents')
           .insert([{
             content: '', // Empty content for uploaded files
@@ -105,18 +151,78 @@ const DocumentUploadMenu: React.FC<DocumentUploadMenuProps> = ({ onUploadComplet
               size: file.size,
               type: file.type,
               storage_path: uploadFileName
-            }
+            },
+            chat_id: effectiveId
           }])
           .select()
           .single();
 
         if (docError) {
-          console.error('Database insert error:', docError);
-          // Clean up the uploaded file if database insert fails
-          await supabase.storage
-            .from('documents')
-            .remove([uploadFileName]);
-          throw new Error(`Database insert failed: ${docError.message}`);
+          // If the error is due to missing chat, create the chat first
+          if (docError.code === '23503') { // Foreign key violation
+            // Create the chat record
+            const { error: chatError } = await supabase
+              .from('chats')
+              .insert([{
+                id: effectiveId,
+                name: chatName,
+                created_at: new Date().toISOString()
+              }]);
+
+            if (chatError) {
+              throw new Error(`Failed to create chat: ${chatError.message}`);
+            }
+
+            // Retry document insert
+            const { data: retryDocData, error: retryDocError } = await supabase
+              .from('documents')
+              .insert([{
+                content: '', // Empty content for uploaded files
+                metadata: {
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+                  storage_path: uploadFileName
+                },
+                chat_id: effectiveId
+              }])
+              .select()
+              .single();
+
+            if (retryDocError) {
+              throw new Error(`Failed to create document: ${retryDocError.message}`);
+            }
+
+            docData = retryDocData;
+          } else {
+            throw new Error(`Failed to create document: ${docError.message}`);
+          }
+        }
+
+        // Associate document with chat tag
+        await addTagToDocument(docData.id, tag.id);
+
+        // If this is a bot document, create the bot_documents association
+        if (isNumericId) {
+          const { error: botDocError } = await supabase
+            .from('bot_documents')
+            .insert([{
+              bot_id: effectiveId,
+              document_id: docData.id
+            }]);
+
+          if (botDocError) {
+            console.error('Bot document association error:', botDocError);
+            // Clean up the document if bot association fails
+            await supabase
+              .from('documents')
+              .delete()
+              .eq('id', docData.id);
+            await supabase.storage
+              .from('documents')
+              .remove([uploadFileName]);
+            throw new Error(`Failed to associate document with bot: ${botDocError.message}`);
+          }
         }
 
         console.log('Document record created:', docData);
@@ -183,7 +289,7 @@ const DocumentUploadMenu: React.FC<DocumentUploadMenuProps> = ({ onUploadComplet
               onClick={handleUploadFromDevice}
               role="menuitem"
             >
-              <DocumentArrowUpIcon className="h-5 w-5 mr-3 text-[#3B82F6]" />
+              <DocumentIcon className="h-5 w-5 mr-3 text-[#3B82F6]" />
               <div>
                 <div className="font-medium">Upload from device</div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">PDF, DOC, DOCX, TXT</div>

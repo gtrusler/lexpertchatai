@@ -16,6 +16,32 @@ The current development focus is on implementing and enhancing the Templates fea
   - Improved error handling for API calls
   - Added system context based on selected bot
 
+### Document Upload Functionality
+
+- **Fixed Issues with Bot ID/Chat ID Handling (3/29/2025)**:
+
+  - Fixed handling of numeric bot IDs vs UUID chat IDs in document uploads
+  - Implemented deterministic UUID generation from numeric bot IDs
+  - Updated component logic to work with both ID types consistently
+  - Added Supabase RLS policies to handle permissions correctly
+  - Implemented automatic chat record creation for bot documents
+  - Fixed tag handling to prevent duplicate key violations
+  - Improved error handling and user feedback across all document upload components
+
+- **Fixed Issues (3/18/2025)**:
+
+  - Enhanced storage service with comprehensive error handling
+  - Implemented automatic bucket creation and validation
+  - Added proper error detection for "bucket already exists" scenarios
+  - Improved file upload options with caching and upsert capabilities
+  - Added detailed logging for debugging
+
+- **Unified Upload Approach**:
+  - Both Chat.tsx and Documents.tsx now use the same storage service
+  - Removed the backend API dependency for file uploads in Documents.tsx
+  - Simplified the upload process by handling everything client-side
+  - Improved error handling and user feedback
+
 ### Templates Feature Enhancement
 
 - **Template-Document Connections (Updated 3/21/2025)**:
@@ -40,22 +66,6 @@ The current development focus is on implementing and enhancing the Templates fea
   - Implemented search and filtering capabilities
   - Added loading states and error handling
 
-### Document Upload Functionality
-
-- **Fixed Issues (3/18/2025)**:
-
-  - Enhanced storage service with comprehensive error handling
-  - Implemented automatic bucket creation and validation
-  - Added proper error detection for "bucket already exists" scenarios
-  - Improved file upload options with caching and upsert capabilities
-  - Added detailed logging for debugging
-
-- **Unified Upload Approach**:
-  - Both Chat.tsx and Documents.tsx now use the same storage service
-  - Removed the backend API dependency for file uploads in Documents.tsx
-  - Simplified the upload process by handling everything client-side
-  - Improved error handling and user feedback
-
 ### Backend Refactoring
 
 - **Modular Structure Implementation (3/19/2025)**:
@@ -67,6 +77,13 @@ The current development focus is on implementing and enhancing the Templates fea
 
 ### Current Debugging Focus
 
+- **Document Upload Improvements (3/29/2025)**:
+
+  - ✅ Fixed document uploads for both numeric bot IDs and UUID chat IDs
+  - ✅ Implemented deterministic UUID generation for bot IDs
+  - ✅ Improved error handling and feedback
+  - ✅ Added proper RLS policies for Supabase tables
+
 - **Documents Page Blank Screen Issue**:
   - Checking Supabase connectivity and environment variables
   - Verifying template_documents junction table
@@ -74,7 +91,19 @@ The current development focus is on implementing and enhancing the Templates fea
 
 ## Recent Changes
 
-### 1. Implemented Live AI Integration (3/24/2025)
+### 1. Fixed Document Upload with Bot IDs (3/29/2025)
+
+- Fixed document uploads when using numeric bot IDs:
+  - Updated `DocumentUploadMenu`, `TextContentModal`, and `ProjectKnowledgeSidebar` components
+  - Implemented deterministic UUID generation from numeric bot IDs (format: `00000000-0000-0000-0000-{padded_bot_id}`)
+  - Added logic to handle both numeric bot IDs and UUID chat IDs consistently
+  - Created automatic chat record creation when using bot IDs
+  - Fixed tag handling to check for existing tags before creation to prevent duplicate key errors
+  - Added Supabase Row Level Security (RLS) policies for `documents` and `chats` tables
+  - Improved error handling and user feedback throughout the upload process
+  - Streamlined UI by removing redundant elements
+
+### 2. Implemented Live AI Integration (3/24/2025)
 
 - Replaced mock chat service with real OpenAI integration:
   - Created dedicated ai_service.py to handle OpenAI API calls
@@ -84,7 +113,7 @@ The current development focus is on implementing and enhancing the Templates fea
   - Ensured OpenAI API key is properly configured in environment
   - No more hardcoded mock responses - all responses now come from actual AI models
 
-### 2. Improved Testing Framework (3/28/2025)
+### 3. Improved Testing Framework (3/28/2025)
 
 - Fixed environmental variable handling in tests to work consistently:
   - Created a flexible env.ts module that works in both Jest and Vite environments
@@ -101,7 +130,7 @@ The current development focus is on implementing and enhancing the Templates fea
   - Enhanced test coverage settings
 - Fixed all test failures and warnings
 
-### 3. Extended Templates Table Schema (3/21/2025)
+### 4. Extended Templates Table Schema (3/21/2025)
 
 - Added additional fields to templates table:
   - `case_history` field to store case background information
@@ -113,19 +142,12 @@ The current development focus is on implementing and enhancing the Templates fea
   - Enhanced `TemplateList` component to include new fields in search functionality
 - Updated context files to reflect schema changes
 
-### 4. Enhanced Templates with Document Connections (3/20/2025)
+### 5. Enhanced Templates with Document Connections (3/20/2025)
 
 - Added `prompt` field to templates table
 - Created template_documents junction table
 - Updated frontend components for document selection
 - Enhanced form validation and user feedback
-
-### 5. Fixed Document Upload Functionality (3/18/2025)
-
-- Enhanced storage service with comprehensive error handling
-- Implemented automatic bucket creation and validation
-- Added proper error detection for bucket operations
-- Improved file upload options with caching and upsert capabilities
 
 ### 6. Fixed Template Document Connections (3/21/2025)
 
